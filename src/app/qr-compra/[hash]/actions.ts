@@ -1,6 +1,5 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { gerarTokenPublico } from "@/lib/tokens";
 
@@ -86,13 +85,14 @@ export async function criarSolicitacao(
     return { ok: false, error: "Código de entrada inválido. Use o QR da sua unidade." };
   }
 
-  const supabase = await createClient();
-  // UUID + hash gerados no servidor ANTES do insert: anon tem INSERT mas
-  // não SELECT (sem leitura pública) — sem `.select().single()`.
+  // INSERT principal via SERVICE (server-side): o driver JS pede RETURNING
+  // por padrão e o RETURNING exige policy de SELECT, que anon não tem
+  // (nem deve ter). Tenant já resolvido do token; sem SELECT envolvido.
+  // UUID + hash gerados no servidor ANTES do insert.
   for (let tentativa = 0; tentativa < 5; tentativa++) {
     const id = crypto.randomUUID();
     const qr_code_hash = gerarTokenPublico(24);
-    const { error } = await supabase
+    const { error } = await svc
       .from("solicitacoes_compra")
       .insert({
         id,

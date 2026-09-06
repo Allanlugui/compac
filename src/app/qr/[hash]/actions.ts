@@ -1,6 +1,5 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export interface CriarChamadoInput {
@@ -66,11 +65,11 @@ export async function criarChamado(
     .filter((u) => typeof u === "string" && u.startsWith(prefixo))
     .slice(0, MAX_FOTOS);
 
-  const supabase = await createClient();
-  // UUID gerado no servidor ANTES do insert (mesmo motivo do qr-compra:
-  // anon tem INSERT, sem SELECT — nada de `.select().single()`).
+  // INSERT via SERVICE (mesmo motivo do qr-compra: o driver pede
+  // RETURNING e anon não tem SELECT — nem deve ter).
+  // UUID gerado no servidor ANTES do insert.
   const id = crypto.randomUUID();
-  const { error } = await supabase
+  const { error } = await svc
     .from("chamados")
     .insert({
       id,
