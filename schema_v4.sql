@@ -11,10 +11,8 @@
 -- apenas DERRUBAM policies permissivas antigas (nunca dados).
 -- ============================================================
 
--- ---------- 0. Organização padrão (backfill) ----------
-insert into public.organizations (nome, slug)
-values ('Operação Principal', 'operacao-principal')
-on conflict (slug) do nothing;
+-- ---------- 0. Ordem de execução ----------
+-- A org padrão é semeada na seção 4 (após a criação das tabelas).
 
 -- ---------- 1. TABELAS: organizations / profiles / memberships ----------
 create table if not exists public.organizations (
@@ -47,6 +45,11 @@ create index if not exists memberships_org_idx on public.memberships (organizati
 
 comment on table public.memberships is
   'Vínculo usuário↔organização. Role pertence à MEMBERSHIP, nunca global.';
+
+-- Semente da org padrão (ANTES de qualquer backfill que a referencie).
+insert into public.organizations (nome, slug)
+values ('Operação Principal', 'operacao-principal')
+on conflict (slug) do nothing;
 
 -- Token público de entrada (QR de compras): resolve a org SEM listar tenants.
 -- 36 hex chars = 144 bits. Gerado no servidor, nunca pelo cliente.
