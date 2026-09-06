@@ -6,6 +6,7 @@ import {
   ChartColumn,
   LayoutDashboard,
   QrCode,
+  ShieldCheck,
   ShoppingCart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,12 @@ const ITENS = [
     rotulo: "Relatórios",
     Icone: ChartColumn,
     ativoEm: (path: string) => path.startsWith("/admin/relatorios"),
+  },
+  {
+    href: "/admin/auditoria",
+    rotulo: "Auditoria",
+    Icone: ShieldCheck,
+    ativoEm: (path: string) => path.startsWith("/admin/auditoria"),
   },
 ];
 

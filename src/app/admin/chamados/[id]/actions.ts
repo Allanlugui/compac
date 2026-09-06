@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { registrarLog } from "@/lib/auditoria";
 import type { ChamadoStatus } from "@/lib/types";
 
 export type AcaoResult = { ok: true } | { ok: false; error: string };
@@ -26,12 +27,28 @@ export async function atualizarStatus(input: {
   }
 
   const supabase = await createClient();
+  const { data: atual } = await supabase
+    .from("chamados")
+    .select("status")
+    .eq("id", input.chamadoId)
+    .maybeSingle();
+
+  if (!atual) return { ok: false, error: "Chamado não encontrado." };
+
   const { error } = await supabase
     .from("chamados")
     .update({ status: input.status })
     .eq("id", input.chamadoId);
 
   if (error) return { ok: false, error: "Não foi possível atualizar o status." };
+  await registrarLog(supabase, {
+    tabela: "chamados",
+    registro_id: input.chamadoId,
+    acao: "UPDATE",
+    dados_anteriores: { status: atual.status },
+    dados_novos: { status: input.status },
+    executado_por: "admin",
+  });
   revalidarChamado(input.chamadoId);
   return { ok: true };
 }
@@ -69,6 +86,17 @@ export async function adicionarFotosDepois(input: {
     .eq("id", input.chamadoId);
 
   if (error) return { ok: false, error: "Não foi possível salvar as fotos." };
+  await registrarLog(supabase, {
+    tabela: "chamados",
+    registro_id: input.chamadoId,
+    acao: "UPDATE",
+    dados_anteriores: null,
+    dados_novos: {
+      fotos_depois_adicionadas: novas.length,
+      total_fotos_depois: combinadas.length,
+    },
+    executado_por: "admin",
+  });
   revalidarChamado(input.chamadoId);
   return { ok: true };
 }
@@ -121,16 +149,30 @@ export async function registrarCompra(
     .maybeSingle();
   if (!chamado) return { ok: false, error: "Chamado não encontrado." };
 
-  const { error } = await supabase.from("compras").insert({
-    chamado_id: input.chamadoId,
-    item,
-    quantidade,
-    valor_unitario: valorUnitario,
-    setor: setor === "" ? null : setor,
-    data_compra: dataCompra,
-  });
+  const { data: compra, error } = await supabase
+    .from("compras")
+    .insert({
+      chamado_id: input.chamadoId,
+      item,
+      quantidade,
+      valor_unitario: valorUnitario,
+      setor: setor === "" ? null : setor,
+      data_compra: dataCompra,
+    })
+    .select("id")
+    .single();
 
-  if (error) return { ok: false, error: "Não foi possível registrar a compra." };
+  if (error || !compra) {
+    return { ok: false, error: "Não foi possível registrar a compra." };
+  }
+  await registrarLog(supabase, {
+    tabela: "compras",
+    registro_id: compra.id as string,
+    acao: "INSERT",
+    dados_anteriores: null,
+    dados_novos: { item, quantidade, chamado_id: input.chamadoId },
+    executado_por: "admin",
+  });
   revalidarChamado(input.chamadoId);
   return { ok: true };
 }

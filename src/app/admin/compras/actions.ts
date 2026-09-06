@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { registrarLog } from "@/lib/auditoria";
 
 export type CompraResult = { ok: true } | { ok: false; error: string };
 
@@ -92,16 +93,30 @@ export async function criarCompra(input: CompraInput): Promise<CompraResult> {
     return { ok: false, error: "Chamado vinculado não encontrado." };
   }
 
-  const { error } = await supabase.from("compras").insert({
-    chamado_id: dados.chamadoId,
-    item: dados.item,
-    quantidade: dados.quantidade,
-    valor_unitario: dados.valorUnitario,
-    setor: dados.setor,
-    data_compra: dados.dataCompra,
-  });
+  const { data: compra, error } = await supabase
+    .from("compras")
+    .insert({
+      chamado_id: dados.chamadoId,
+      item: dados.item,
+      quantidade: dados.quantidade,
+      valor_unitario: dados.valorUnitario,
+      setor: dados.setor,
+      data_compra: dados.dataCompra,
+    })
+    .select("id")
+    .single();
 
-  if (error) return { ok: false, error: "Não foi possível registrar a compra." };
+  if (error || !compra) {
+    return { ok: false, error: "Não foi possível registrar a compra." };
+  }
+  await registrarLog(supabase, {
+    tabela: "compras",
+    registro_id: compra.id as string,
+    acao: "INSERT",
+    dados_anteriores: null,
+    dados_novos: { ...dados },
+    executado_por: "admin",
+  });
   revalidarCompras();
   return { ok: true };
 }
@@ -116,6 +131,14 @@ export async function atualizarCompra(
   const { dados } = validacao;
 
   const supabase = await createClient();
+  const { data: anterior } = await supabase
+    .from("compras")
+    .select("*")
+    .eq("id", input.id)
+    .maybeSingle();
+
+  if (!anterior) return { ok: false, error: "Compra não encontrada." };
+
   const { error } = await supabase
     .from("compras")
     .update({
@@ -128,6 +151,14 @@ export async function atualizarCompra(
     .eq("id", input.id);
 
   if (error) return { ok: false, error: "Não foi possível atualizar a compra." };
+  await registrarLog(supabase, {
+    tabela: "compras",
+    registro_id: input.id,
+    acao: "UPDATE",
+    dados_anteriores: anterior as unknown as Record<string, unknown>,
+    dados_novos: { ...dados },
+    executado_por: "admin",
+  });
   revalidarCompras();
   return { ok: true };
 }
@@ -137,9 +168,25 @@ export async function excluirCompra(input: { id: string }): Promise<CompraResult
   if (!input.id) return { ok: false, error: "Compra inválida." };
 
   const supabase = await createClient();
+  const { data: anterior } = await supabase
+    .from("compras")
+    .select("*")
+    .eq("id", input.id)
+    .maybeSingle();
+
+  if (!anterior) return { ok: false, error: "Compra não encontrada." };
+
   const { error } = await supabase.from("compras").delete().eq("id", input.id);
 
   if (error) return { ok: false, error: "Não foi possível excluir a compra." };
+  await registrarLog(supabase, {
+    tabela: "compras",
+    registro_id: input.id,
+    acao: "DELETE",
+    dados_anteriores: anterior as unknown as Record<string, unknown>,
+    dados_novos: null,
+    executado_por: "admin",
+  });
   revalidarCompras();
   return { ok: true };
 }

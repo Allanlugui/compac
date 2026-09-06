@@ -41,3 +41,31 @@ body {
     print-color-adjust: exact;
   }
 }
+
+/* SGA-M v2.0 (Fase 1) — Design system 3D minimalista / glassmorphism. */
+@layer utilities {
+  /* Efeitos de Elevado 3D & Relevo Sutil */
+  .card-3d {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(244, 244, 245, 0.7) 100%);
+    box-shadow:
+      0 10px 30px -10px rgba(0, 0, 0, 0.08),
+      0 4px 6px -2px rgba(0, 0, 0, 0.03),
+      inset 0 1px 1px 0 rgba(255, 255, 255, 0.9),
+      inset 0 -2px 4px 0 rgba(0, 0, 0, 0.05);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .card-3d:hover {
+    transform: translateY(-4px) scale(1.01);
+    box-shadow:
+      0 20px 40px -15px rgba(0, 0, 0, 0.12),
+      0 8px 12px -4px rgba(0, 0, 0, 0.05),
+      inset 0 1px 2px 0 rgba(255, 255, 255, 1);
+  }
+
+  .icon-3d {
+    box-shadow:
+      0 4px 10px rgba(0, 0, 0, 0.15),
+      inset 0 1px 1px rgba(255, 255, 255, 0.4);
+  }
+}

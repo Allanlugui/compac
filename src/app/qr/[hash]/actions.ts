@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { registrarLog } from "@/lib/auditoria";
 
 export interface CriarChamadoInput {
   ativoId: string;
@@ -76,5 +77,15 @@ export async function criarChamado(
     };
   }
 
-  return { ok: true, id: data.id as string };
+  const id = data.id as string;
+  await registrarLog(supabase, {
+    tabela: "chamados",
+    registro_id: id,
+    acao: "INSERT",
+    dados_anteriores: null,
+    dados_novos: { ativo_id: input.ativoId, solicitante, fotos: fotosAntes.length },
+    executado_por: solicitante,
+  });
+
+  return { ok: true, id };
 }

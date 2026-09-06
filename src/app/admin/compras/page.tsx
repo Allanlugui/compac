@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { Receipt, TrendingUp, Wallet } from "lucide-react";
+import { ClipboardCheck, Receipt, TrendingUp, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import type { ChamadoStatus, Compra } from "@/lib/types";
+import type { ChamadoStatus, Compra, SolicitacaoCompra } from "@/lib/types";
 import { formatarMoeda, numeroOS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import NovaCompraForm from "./NovaCompraForm";
 import TabelaCompras from "./TabelaCompras";
+import PedidosCompra from "./PedidosCompra";
 
 export const metadata: Metadata = {
   title: "Compras · SGA-M",
@@ -17,16 +18,26 @@ const STATUS_VINCULAVEIS: ChamadoStatus[] = ["aberto", "em_andamento"];
 export default async function ComprasPage() {
   const supabase = await createClient();
 
-  const [{ data: comprasData }, { data: chamadosData }] = await Promise.all([
-    supabase
-      .from("compras")
-      .select("*")
-      .order("data_compra", { ascending: false }),
-    supabase
-      .from("chamados")
-      .select("id, status, ativos(id, nome)")
-      .order("created_at", { ascending: false }),
-  ]);
+  const [{ data: comprasData }, { data: chamadosData }, { data: pedidosData }] =
+    await Promise.all([
+      supabase
+        .from("compras")
+        .select("*")
+        .order("data_compra", { ascending: false }),
+      supabase
+        .from("chamados")
+        .select("id, status, ativos(id, nome)")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("solicitacoes_compra")
+        .select("*")
+        .order("created_at", { ascending: false }),
+    ]);
+
+  const pedidos = ((pedidosData ?? []) as SolicitacaoCompra[]).slice().sort(
+    (a, b) => +new Date(b.created_at) - +new Date(a.created_at),
+  );
+  const pedidosPendentes = pedidos.filter((p) => p.status === "pendente").length;
 
   const compras = ((comprasData ?? []) as Compra[]).slice().sort(
     (a, b) => +new Date(b.data_compra) - +new Date(a.data_compra),
@@ -87,6 +98,12 @@ export default async function ComprasPage() {
       Icone: Receipt,
       classes: "bg-zinc-900 text-white",
     },
+    {
+      rotulo: "Pedidos pendentes",
+      valor: String(pedidosPendentes),
+      Icone: ClipboardCheck,
+      classes: "bg-amber-100 text-amber-700",
+    },
   ];
 
   return (
@@ -98,7 +115,7 @@ export default async function ComprasPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {kpis.map(({ rotulo, valor, Icone, classes }) => (
           <div
             key={rotulo}
@@ -123,6 +140,7 @@ export default async function ComprasPage() {
       </div>
 
       <NovaCompraForm chamados={opcoesVinculo} />
+      <PedidosCompra pedidos={pedidos} />
       <TabelaCompras compras={compras} vinculos={vinculos} />
     </div>
   );

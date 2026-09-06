@@ -30,7 +30,7 @@ export default function StatusBadge({ status }: { status: ChamadoStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ring-1",
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ring-1 shadow-sm",
         classes,
       )}
     >

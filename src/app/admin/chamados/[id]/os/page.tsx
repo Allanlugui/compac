@@ -110,19 +110,24 @@ export default async function OsPage({ params }: OsPageProps) {
   return (
     <div>
       {/* Barra de navegação — oculta na impressão */}
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between print:hidden">
-        <Link
-          href={`/admin/chamados/${chamado.id}`}
-          className="inline-flex min-h-[40px] w-fit items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-zinc-600 transition hover:bg-zinc-200/60 hover:text-zinc-900"
-        >
-          <ArrowLeft className="size-4" />
-          Voltar ao chamado
-        </Link>
+      <div className="card-3d mb-4 flex flex-col gap-2 rounded-2xl border border-zinc-200/70 p-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/admin/chamados/${chamado.id}`}
+            className="inline-flex min-h-[40px] w-fit items-center gap-1.5 rounded-lg px-2 text-sm font-bold text-zinc-600 transition hover:bg-zinc-200/60 hover:text-zinc-900"
+          >
+            <ArrowLeft className="size-4" />
+            Voltar ao chamado
+          </Link>
+          <span className="hidden rounded-full bg-zinc-900 px-3 py-1 font-mono text-xs font-bold text-white sm:inline-block">
+            OS Nº {os}
+          </span>
+        </div>
         <BotaoImprimir />
       </div>
 
       {/* Corpo da OS — é o que sai no papel/PDF */}
-      <article className="bg-white p-6 text-black shadow-sm ring-1 ring-zinc-200 sm:p-10 print:p-0 print:shadow-none print:ring-0">
+      <article className="bg-white p-6 text-black shadow-2xl ring-1 ring-zinc-200 sm:p-10 print:p-0 print:shadow-none print:ring-0">
         {/* Cabeçalho formal */}
         <header className="flex items-start justify-between gap-4 border-b-4 border-double border-zinc-900 pb-4">
           <div>

@@ -25,7 +25,7 @@ export default function GaleriaFotos({ fotos, legenda, vazio }: GaleriaFotosProp
           target="_blank"
           rel="noreferrer"
           title={`${legenda} ${i + 1} — abrir original`}
-          className="group relative block overflow-hidden rounded-xl ring-1 ring-zinc-200"
+          className="group relative block overflow-hidden rounded-2xl ring-1 ring-zinc-200 transition-shadow hover:shadow-xl hover:ring-zinc-300"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img

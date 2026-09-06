@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { registrarLog } from "@/lib/auditoria";
 
 export type CriarAtivoResult =
   | { ok: true }
@@ -42,18 +43,30 @@ export async function criarAtivo(input: {
 
   for (let tentativa = 0; tentativa < 5; tentativa++) {
     const qr_code_hash = gerarHash(12);
-    const { error } = await supabase.from("ativos").insert({
-      nome,
-      localizacao: localizacao === "" ? null : localizacao,
-      qr_code_hash,
-    });
+    const { data, error } = await supabase
+      .from("ativos")
+      .insert({
+        nome,
+        localizacao: localizacao === "" ? null : localizacao,
+        qr_code_hash,
+      })
+      .select("id")
+      .single();
 
-    if (!error) {
+    if (!error && data) {
+      await registrarLog(supabase, {
+        tabela: "ativos",
+        registro_id: data.id as string,
+        acao: "INSERT",
+        dados_anteriores: null,
+        dados_novos: { nome, localizacao, qr_code_hash },
+        executado_por: "admin",
+      });
       revalidatePath("/admin/ativos");
       return { ok: true };
     }
     // 23505 = violação de unicidade → tenta outro hash.
-    if (error.code !== "23505") {
+    if (!error || error.code !== "23505") {
       return { ok: false, error: "Não foi possível salvar o ativo." };
     }
   }
