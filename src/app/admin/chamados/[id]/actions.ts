@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { exigirPapel } from "@/lib/roles";
+import { exigirPermissao } from "@/lib/permissoes";
 import { registrarLog } from "@/lib/auditoria";
 import { notificar } from "@/app/admin/notificacoes/actions";
 import type { ChamadoStatus, ImpactoOperacional } from "@/lib/types";
@@ -38,7 +38,7 @@ export async function atualizarStatus(input: {
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
+  exigirPermissao(ctx, "chamados.executar");
 
   const { data: atual } = await supabase
     .from("chamados")
@@ -88,7 +88,7 @@ export async function atualizarImpacto(input: {
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
+  exigirPermissao(ctx, "chamados.executar");
 
   const { data: atual } = await supabase
     .from("chamados")
@@ -136,7 +136,7 @@ export async function adicionarFotosDepois(input: {
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
+  exigirPermissao(ctx, "chamados.executar");
 
   const { data, error: erroLeitura } = await supabase
     .from("chamados")
@@ -217,7 +217,7 @@ export async function registrarCompra(
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+  exigirPermissao(ctx, "compras.escrever");
 
   const { data: chamado } = await supabase
     .from("chamados")
@@ -275,7 +275,7 @@ export async function atualizarExecucao(
   input: AtualizarExecucaoInput,
 ): Promise<AcaoResult> {
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
+  exigirPermissao(ctx, "chamados.executar");
   if (!input.chamadoId) return { ok: false, error: "Chamado inválido." };
   if (input.prioridade !== "" && !PRIORIDADES.includes(input.prioridade)) {
     return { ok: false, error: "Prioridade inválida." };

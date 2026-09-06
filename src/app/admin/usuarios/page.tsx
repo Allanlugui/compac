@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { ShieldX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { exigirPapel } from "@/lib/roles";
+import { exigirPermissao } from "@/lib/permissoes";
 import type { Role } from "@/lib/types";
 import PageHeader from "@/components/ui/PageHeader";
 import MembrosManager from "./MembrosManager";
@@ -13,7 +13,7 @@ export default async function UsuariosPage() {
   let ctx: Awaited<ReturnType<typeof requireOrg>> | null = null;
   try {
     ctx = await requireOrg();
-    exigirPapel(ctx, ["ADMIN"]);
+    exigirPermissao(ctx, "usuarios.administrar");
   } catch {
     return (
       <div className="space-y-6">
@@ -29,7 +29,7 @@ export default async function UsuariosPage() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("memberships")
-    .select("user_id, role, status, setor, departamento, profiles!inner(nome)")
+    .select("user_id, role, status, setor, departamento, profiles!inner(nome, telefone, cargo, matricula, ultimo_acesso)")
     .eq("organization_id", ctx.orgId)
     .order("created_at", { ascending: true });
 
@@ -39,7 +39,7 @@ export default async function UsuariosPage() {
     status: "ativo" | "inativo";
     setor: string | null;
     departamento: string | null;
-    profiles: { nome: string | null };
+    profiles: { nome: string | null; telefone: string | null; cargo: string | null; matricula: string | null; ultimo_acesso: string | null };
   }[]).map((m) => ({
     user_id: m.user_id,
     role: m.role,
@@ -47,6 +47,10 @@ export default async function UsuariosPage() {
     setor: m.setor,
     departamento: m.departamento,
     nome: m.profiles?.nome ?? "—",
+    telefone: m.profiles?.telefone ?? null,
+    cargo: m.profiles?.cargo ?? null,
+    matricula: m.profiles?.matricula ?? null,
+    ultimo_acesso: m.profiles?.ultimo_acesso ?? null,
   }));
 
   return (

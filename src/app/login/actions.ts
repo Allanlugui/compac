@@ -19,6 +19,15 @@ export async function auditLogin(): Promise<void> {
     dados_novos: { email: user.email },
     executado_por: user.email ?? user.id,
   });
+  // Último acesso do perfil (best-effort; RLS permite update próprio).
+  try {
+    await supabase
+      .from("profiles")
+      .update({ ultimo_acesso: new Date().toISOString() })
+      .eq("id", user.id);
+  } catch {
+    // Silencioso: observabilidade, não regra de negócio.
+  }
 }
 
 /** Encerra a sessão com trilha de auditoria. */

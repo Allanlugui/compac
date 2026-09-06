@@ -3,14 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { exigirPapel } from "@/lib/roles";
+import { exigirPermissao } from "@/lib/permissoes";
 import { registrarLog } from "@/lib/auditoria";
 import { notificar } from "@/app/admin/notificacoes/actions";
 import type { TipoMovimentacao } from "@/lib/types";
 
 export type EstoqueResult = { ok: true } | { ok: false; error: string };
-
-const PAPEIS_MOV = ["ADMIN", "GESTOR", "COMPRAS", "TECNICO"] as const;
 
 function revalidar() {
   revalidatePath("/admin/estoque");
@@ -29,7 +27,7 @@ export async function criarProduto(input: {
   custo: number;
 }): Promise<EstoqueResult> {
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+  exigirPermissao(ctx, "estoque.escrever");
 
   const codigo = input.codigo.trim().toUpperCase();
   const descricao = input.descricao.trim();
@@ -82,7 +80,7 @@ export interface MovimentarInput {
  */
 export async function movimentarEstoque(input: MovimentarInput): Promise<EstoqueResult> {
   const ctx = await requireOrg();
-  exigirPapel(ctx, [...PAPEIS_MOV]);
+  exigirPermissao(ctx, "estoque.movimentar");
 
   const quantidade = Number(input.quantidade);
   if (!input.produtoId) return { ok: false, error: "Produto inválido." };

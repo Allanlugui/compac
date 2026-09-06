@@ -99,6 +99,12 @@ export const SECOES_NAV: SecaoNav[] = [
     titulo: "Sistema",
     itens: [
       {
+        href: "/admin/estrutura",
+        rotulo: "Estrutura",
+        Icone: Building2,
+        ativoEm: (p) => p.startsWith("/admin/estrutura"),
+        papeis: ["ADMIN", "GESTOR"],
+      },      {
         href: "/admin/auditoria",
         rotulo: "Auditoria",
         Icone: ShieldCheck,

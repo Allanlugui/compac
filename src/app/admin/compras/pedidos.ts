@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { exigirPapel } from "@/lib/roles";
+import { exigirPermissao } from "@/lib/permissoes";
 import { registrarLog } from "@/lib/auditoria";
 import { notificar } from "@/app/admin/notificacoes/actions";
 import type { SolicitacaoCompraStatus } from "@/lib/types";
@@ -38,7 +38,7 @@ export async function atualizarStatusPedido(input: {
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+  exigirPermissao(ctx, "compras.escrever");
 
   const { data: atual } = await supabase
     .from("solicitacoes_compra")
@@ -118,7 +118,7 @@ export async function efetivarPedido(
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+  exigirPermissao(ctx, "compras.escrever");
 
   const { data: pedido } = await supabase
     .from("solicitacoes_compra")

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Activity, Database, FileClock, ScrollText, ShieldX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { exigirPapel } from "@/lib/roles";
+import { exigirPermissao } from "@/lib/permissoes";
 import type { AuditoriaLog } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import LogsAuditoria from "./LogsAuditoria";
@@ -42,7 +42,7 @@ export default async function AuditoriaPage() {
     ctx = await requireOrg();
     // Trilha administrativa: só ADMIN, GESTOR e AUDITOR.
     // TECNICO/COMPRAS/SOLICITANTE veem "restrito" (actions seguem barrando).
-    exigirPapel(ctx, ["ADMIN", "GESTOR", "AUDITOR"]);
+    exigirPermissao(ctx, "auditoria.ver");
   } catch {
     return (
       <div className="space-y-6">

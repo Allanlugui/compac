@@ -7,7 +7,7 @@ import { enviarSenhaProvisoria } from "@/lib/email";
 import { gerarSenhaProvisoria } from "@/lib/senhas";
 import { registrarLog } from "@/lib/auditoria";
 import { requireOrg } from "@/lib/org";
-import { exigirPapel } from "@/lib/roles";
+import { exigirPermissao } from "@/lib/permissoes";
 import type { Role } from "@/lib/types";
 
 export type UsuarioResult =
@@ -29,15 +29,24 @@ function normalizarSetor(v: unknown): string | null {
  * (SMTP próprio) → audita.
  * Sem SMTP, a senha retorna para exibição única ao admin.
  */
+function normalizarContato(v: unknown, max: number): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().slice(0, max);
+  return t === "" ? null : t;
+}
+
 export async function convidarMembro(input: {
   email: string;
   nome: string;
   role: Role;
   setor?: string;
   departamento?: string;
+  telefone?: string;
+  cargo?: string;
+  matricula?: string;
 }): Promise<UsuarioResult> {
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN"]);
+  exigirPermissao(ctx, "usuarios.administrar");
 
   const email = input.email.trim().toLowerCase();
   const nome = input.nome.trim();
@@ -89,7 +98,13 @@ export async function convidarMembro(input: {
     return { ok: false, error: "Não foi possível criar o usuário." };
   }
 
-  await svc.from("profiles").upsert({ id: data.user.id, nome });
+  await svc.from("profiles").upsert({
+    id: data.user.id,
+    nome,
+    telefone: normalizarContato(input.telefone, 30),
+    cargo: normalizarContato(input.cargo, 80),
+    matricula: normalizarContato(input.matricula, 40),
+  });
   await svc.from("memberships").insert({
     organization_id: ctx.orgId,
     user_id: data.user.id,
@@ -134,7 +149,7 @@ export async function alterarPapel(input: {
   role: Role;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN"]);
+  exigirPermissao(ctx, "usuarios.administrar");
   if (!input.userId || input.userId === ctx.userId) {
     return { ok: false, error: "Operação inválida para este usuário." };
   }
@@ -177,7 +192,7 @@ export async function alternarStatusMembro(input: {
   status: "ativo" | "inativo";
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN"]);
+  exigirPermissao(ctx, "usuarios.administrar");
   if (!input.userId || input.userId === ctx.userId) {
     return { ok: false, error: "Operação inválida para este usuário." };
   }
@@ -214,9 +229,12 @@ export async function editarMembro(input: {
   role: Role;
   setor?: string;
   departamento?: string;
+  telefone?: string;
+  cargo?: string;
+  matricula?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN"]);
+  exigirPermissao(ctx, "usuarios.administrar");
   if (!input.userId) return { ok: false, error: "Membro inválido." };
 
   const nome = input.nome.trim().slice(0, 120);
@@ -244,7 +262,12 @@ export async function editarMembro(input: {
   const svc = createServiceClient();
   const { error: erroProfile } = await svc
     .from("profiles")
-    .update({ nome })
+    .update({
+      nome,
+      telefone: normalizarContato(input.telefone, 30),
+      cargo: normalizarContato(input.cargo, 80),
+      matricula: normalizarContato(input.matricula, 40),
+    })
     .eq("id", input.userId);
   if (erroProfile) return { ok: false, error: "Não foi possível salvar o nome." };
 
@@ -285,7 +308,7 @@ export async function removerMembro(input: {
   userId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN"]);
+  exigirPermissao(ctx, "usuarios.administrar");
   if (!input.userId || input.userId === ctx.userId) {
     return { ok: false, error: "Operação inválida para este usuário." };
   }

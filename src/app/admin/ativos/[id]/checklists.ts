@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { exigirPapel } from "@/lib/roles";
+import { exigirPermissao } from "@/lib/permissoes";
 import { registrarLog } from "@/lib/auditoria";
 
 export type ChecklistResult = { ok: true; id?: string } | { ok: false; error: string };
@@ -15,7 +15,7 @@ export async function criarModelo(input: {
   itens: string[];
 }): Promise<ChecklistResult> {
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
+  exigirPermissao(ctx, "checklists.escrever");
 
   const titulo = input.titulo.trim();
   const itens = input.itens.map((t) => t.trim()).filter((t) => t.length >= 2);
@@ -66,7 +66,7 @@ export async function salvarExecucao(input: {
   respostas: RespostaItem[];
 }): Promise<ChecklistResult> {
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
+  exigirPermissao(ctx, "checklists.escrever");
 
   const supabase = await createClient();
   const [{ data: modelo }, { data: chamado }] = await Promise.all([

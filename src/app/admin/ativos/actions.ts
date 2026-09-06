@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { exigirPapel } from "@/lib/roles";
+import { exigirPermissao } from "@/lib/permissoes";
 import { registrarLog } from "@/lib/auditoria";
 
 export type CriarAtivoResult =
@@ -43,7 +43,7 @@ export async function criarAtivo(input: {
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
+  exigirPermissao(ctx, "ativos.escrever");
 
   for (let tentativa = 0; tentativa < 5; tentativa++) {
     const qr_code_hash = gerarHash(12);

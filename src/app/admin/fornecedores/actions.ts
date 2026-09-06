@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { exigirPapel } from "@/lib/roles";
+import { exigirPermissao } from "@/lib/permissoes";
 import { registrarLog } from "@/lib/auditoria";
 
 export type FornecedorResult = { ok: true } | { ok: false; error: string };
@@ -34,7 +34,7 @@ export async function criarFornecedor(input: FornecedorInput): Promise<Fornecedo
   const dados = validar(input);
   if (!dados) return { ok: false, error: "Nome: 2 a 160 caracteres." };
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+  exigirPermissao(ctx, "fornecedores.escrever");
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -54,7 +54,7 @@ export async function criarFornecedor(input: FornecedorInput): Promise<Fornecedo
 
 export async function alternarFornecedor(input: { id: string; ativo: boolean }): Promise<FornecedorResult> {
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+  exigirPermissao(ctx, "fornecedores.escrever");
   if (!input.id) return { ok: false, error: "Fornecedor inválido." };
 
   const supabase = await createClient();

@@ -11,6 +11,9 @@ export interface Ativo {
   localizacao: string | null;
   qr_code_hash: string;
   created_at: string;
+  /** FASE 1 (schema_v6): vínculo estrutural — FASE 2 consome. */
+  localidade_id: string | null;
+  categoria_id: string | null;
 }
 
 /** Nível de impacto operacional da ocorrência (5 níveis, schema_v5). */
@@ -174,6 +177,8 @@ export interface Produto {
   custo_medio: number;
   ativo: boolean;
   created_at: string;
+  /** FASE 1 (schema_v6): categoria estruturada — convive com `categoria` texto. */
+  categoria_id: string | null;
 }
 
 export type TipoMovimentacao = "entrada" | "saida" | "ajuste" | "reserva" | "consumo";
@@ -217,5 +222,61 @@ export interface Notificacao {
   descricao: string | null;
   link: string | null;
   lida: boolean;
+  created_at: string;
+}
+
+/**
+ * FASE 1 — fundação de dados (espelha `schema_v6.sql`).
+ * Localidades: hierarquia flexível (níveis opcionais).
+ * Categorias: `atributos` define dados técnicos sem colunas fixas.
+ */
+
+export type TipoLocalidade =
+  | "unidade"
+  | "predio"
+  | "bloco"
+  | "andar"
+  | "area"
+  | "sala";
+
+export interface Localidade {
+  id: string;
+  organization_id: string;
+  nome: string;
+  tipo: TipoLocalidade;
+  parent_id: string | null;
+  created_at: string;
+}
+
+export type TipoCategoria = "ativo" | "produto";
+
+export type TipoAtributo = "texto" | "numero" | "selecao" | "data";
+
+export interface AtributoCategoria {
+  nome: string;
+  tipo: TipoAtributo;
+  obrigatorio: boolean;
+  unidade?: string;
+  opcoes?: string[];
+}
+
+export interface Categoria {
+  id: string;
+  organization_id: string;
+  nome: string;
+  tipo: TipoCategoria;
+  atributos: AtributoCategoria[];
+  ativa: boolean;
+  created_at: string;
+}
+
+export interface Profile {
+  id: string;
+  nome: string | null;
+  telefone: string | null;
+  cargo: string | null;
+  matricula: string | null;
+  avatar_url: string | null;
+  ultimo_acesso: string | null;
   created_at: string;
 }

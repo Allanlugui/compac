@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { exigirPapel } from "@/lib/roles";
+import { exigirPermissao } from "@/lib/permissoes";
 import { registrarLog } from "@/lib/auditoria";
 
 export type CompraResult = { ok: true } | { ok: false; error: string };
@@ -98,7 +98,7 @@ export async function criarCompra(input: CompraInput): Promise<CompraResult> {
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+  exigirPermissao(ctx, "compras.escrever");
 
   if (dados.chamadoId && !(await chamadoExiste(supabase, dados.chamadoId, ctx.orgId))) {
     return { ok: false, error: "Chamado vinculado não encontrado." };
@@ -156,7 +156,7 @@ export async function atualizarCompra(
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+  exigirPermissao(ctx, "compras.escrever");
 
   const { data: anterior } = await supabase
     .from("compras")
@@ -200,7 +200,7 @@ export async function excluirCompra(input: { id: string }): Promise<CompraResult
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+  exigirPermissao(ctx, "compras.escrever");
 
   const { data: anterior } = await supabase
     .from("compras")

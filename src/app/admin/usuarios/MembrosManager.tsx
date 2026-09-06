@@ -29,6 +29,10 @@ export interface Membro {
   nome: string;
   setor: string | null;
   departamento: string | null;
+  telefone: string | null;
+  cargo: string | null;
+  matricula: string | null;
+  ultimo_acesso: string | null;
 }
 
 const ROLES: { id: Role; rotulo: string }[] = [
@@ -47,6 +51,9 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
   const [role, setRole] = useState<Role>("TECNICO");
   const [setor, setSetor] = useState("");
   const [departamento, setDepartamento] = useState("");
+  const [telefone, setTelefone] = useState("");
+  const [cargo, setCargo] = useState("");
+  const [matricula, setMatricula] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [processando, setProcessando] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -56,6 +63,9 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
     role: "TECNICO" as Role,
     setor: "",
     departamento: "",
+    telefone: "",
+    cargo: "",
+    matricula: "",
   });
   const [credencial, setCredencial] = useState<{
     email: string;
@@ -71,7 +81,7 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
     setCredencial(null);
     setSalvando(true);
     try {
-      const r = await convidarMembro({ email, nome, role, setor, departamento });
+      const r = await convidarMembro({ email, nome, role, setor, departamento, telefone, cargo, matricula });
       if (!r.ok) throw new Error(r.error);
       if (r.senhaProvisoria !== "") {
         // Exibição ÚNICA: a senha não fica salva em lugar nenhum.
@@ -81,6 +91,9 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
       setNome("");
       setSetor("");
       setDepartamento("");
+      setTelefone("");
+      setCargo("");
+      setMatricula("");
       router.refresh();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Falha inesperada.");
@@ -96,6 +109,9 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
       role: m.role,
       setor: m.setor ?? "",
       departamento: m.departamento ?? "",
+      telefone: m.telefone ?? "",
+      cargo: m.cargo ?? "",
+      matricula: m.matricula ?? "",
     });
     setErro(null);
   }
@@ -200,6 +216,18 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
             <span className="mb-1 block text-xs font-bold text-zinc-700">Departamento</span>
             <input type="text" maxLength={80} value={departamento} onChange={(e) => setDepartamento(e.target.value)} disabled={salvando} placeholder="Ex.: Operações" className={campo} />
           </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold text-zinc-700">Telefone</span>
+            <input type="tel" maxLength={30} value={telefone} onChange={(e) => setTelefone(e.target.value)} disabled={salvando} placeholder="(11) 99999-0000" className={campo} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold text-zinc-700">Cargo</span>
+            <input type="text" maxLength={80} value={cargo} onChange={(e) => setCargo(e.target.value)} disabled={salvando} placeholder="Ex.: Técnico de manutenção" className={campo} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold text-zinc-700">Matrícula</span>
+            <input type="text" maxLength={40} value={matricula} onChange={(e) => setMatricula(e.target.value)} disabled={salvando} placeholder="Código interno" className={campo} />
+          </label>
           <div className="flex items-end">
             <button type="submit" disabled={salvando} className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-6 font-bold text-white transition hover:bg-zinc-700 disabled:opacity-60">
               {salvando && <LoaderCircle className="size-5 animate-spin" />}
@@ -251,11 +279,15 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
               <li key={m.user_id} className="rounded-xl bg-zinc-50 px-4 py-3 ring-1 ring-zinc-200/70">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-black">{m.nome}</p>
+                    <p className="truncate text-sm font-black">{m.nome}{m.cargo ? ` · ${m.cargo}` : ""}</p>
                     <p className="text-xs text-zinc-500">
                       {[m.setor, m.departamento].filter(Boolean).join(" · ") || "Sem setor/departamento"}
+                      {m.telefone ? ` · ${m.telefone}` : ""}
+                      {m.matricula ? ` · matr. ${m.matricula}` : ""}
                     </p>
-                    <p className="font-mono text-[11px] text-zinc-400">{m.user_id.slice(0, 8)}…</p>
+                    <p className="font-mono text-[11px] text-zinc-400">
+                      {m.user_id.slice(0, 8)}…{m.ultimo_acesso ? ` · último acesso ${new Date(m.ultimo_acesso).toLocaleString("pt-BR")}` : " · sem acesso registrado"}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${m.status === "ativo" ? "bg-emerald-100 text-emerald-800 ring-emerald-200" : "bg-zinc-200 text-zinc-500 ring-zinc-300"}`}>
@@ -286,6 +318,18 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
                     <label className="block">
                       <span className="mb-1 block text-xs font-bold text-zinc-700">Departamento</span>
                       <input value={formEdit.departamento} onChange={(e) => setFormEdit({ ...formEdit, departamento: e.target.value })} disabled={ocupado} maxLength={80} className={campo} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-bold text-zinc-700">Telefone</span>
+                      <input value={formEdit.telefone} onChange={(e) => setFormEdit({ ...formEdit, telefone: e.target.value })} disabled={ocupado} maxLength={30} className={campo} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-bold text-zinc-700">Cargo</span>
+                      <input value={formEdit.cargo} onChange={(e) => setFormEdit({ ...formEdit, cargo: e.target.value })} disabled={ocupado} maxLength={80} className={campo} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-bold text-zinc-700">Matrícula</span>
+                      <input value={formEdit.matricula} onChange={(e) => setFormEdit({ ...formEdit, matricula: e.target.value })} disabled={ocupado} maxLength={40} className={campo} />
                     </label>
                     <div className="flex gap-2 sm:col-span-2">
                       <button type="button" onClick={() => salvarEdicao(m.user_id)} disabled={ocupado} className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
