@@ -142,7 +142,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
       {/* Abas por status */}
       <nav
         aria-label="Filtrar por status"
-        className="flex gap-1 overflow-x-auto rounded-2xl border border-zinc-200/70 bg-zinc-200/60 p-1.5 shadow-inner"
+        className="no-scrollbar flex gap-1 overflow-x-auto rounded-2xl border border-zinc-200/70 bg-zinc-200/60 p-1.5 shadow-inner"
       >
         {ABAS.map(({ id, rotulo }) => {
           const total =
@@ -213,7 +213,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
         })}
       </div>
 
-      {/* Lista de chamados */}
+      {/* Lista de chamados — linhas detalhadas, sem grid */}
       {visiveis.length === 0 ? (
         <EmptyState
           Icone={ClipboardList}
@@ -221,11 +221,11 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
           descricao="Novos chamados abertos via QR Code aparecem neste painel. Tente alterar os filtros ou aguarde novas solicitações."
         />
       ) : (
-        <ul className="grid gap-4 lg:grid-cols-2">
+        <ul className="divide-y divide-zinc-200/80 overflow-hidden rounded-3xl border border-zinc-200/70 bg-white shadow-sm">
           {visiveis.map((chamado) => (
             <li
               key={chamado.id}
-              className="card-3d group relative flex flex-col overflow-hidden rounded-3xl border border-zinc-200/70 p-5"
+              className="group relative flex gap-3 p-4 transition hover:bg-zinc-50 sm:items-center sm:gap-4 sm:p-5"
             >
               <span
                 aria-hidden
@@ -234,33 +234,37 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                   ACENTO_STATUS[chamado.status],
                 )}
               />
-              <div className="flex items-start justify-between gap-3 pl-2">
-                <div className="min-w-0">
+              <div className="min-w-0 flex-1 pl-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <h2 className="truncate text-base font-black text-zinc-900">
                     {nomeDoAtivo(chamado.ativos)}
                   </h2>
-                  <p className="mt-1 flex items-center gap-1.5 truncate text-sm text-zinc-500">
-                    <User className="size-3.5 shrink-0" />
-                    {chamado.solicitante}
-                  </p>
-                  <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-400">
-                    <CalendarDays className="size-3.5 shrink-0" />
-                    {formatarDataHora(chamado.created_at)}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-1.5">
                   <StatusBadge status={chamado.status} />
                   <ImpactoBadge impacto={chamado.impacto} />
                 </div>
+                <p className="mt-1.5 line-clamp-2 text-sm text-zinc-600">
+                  {chamado.descricao}
+                </p>
+                <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
+                  <span className="inline-flex items-center gap-1">
+                    <User className="size-3.5 shrink-0" />
+                    {chamado.solicitante}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <CalendarDays className="size-3.5 shrink-0" />
+                    {formatarDataHora(chamado.created_at)}
+                  </span>
+                  <span className="font-mono text-[11px] text-zinc-400">
+                    #{chamado.id.slice(0, 8).toUpperCase()}
+                  </span>
+                </p>
               </div>
-              <p className="mt-3 line-clamp-2 pl-2 text-sm text-zinc-600">
-                {chamado.descricao}
-              </p>
               <Link
                 href={`/admin/chamados/${chamado.id}`}
-                className="mt-4 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-2xl bg-zinc-900 px-4 text-sm font-bold text-white shadow-lg transition hover:bg-zinc-700"
+                aria-label={`Abrir detalhes do chamado de ${nomeDoAtivo(chamado.ativos)}`}
+                className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 self-center rounded-2xl bg-zinc-900 px-4 text-sm font-bold whitespace-nowrap text-white shadow-lg transition hover:bg-zinc-700"
               >
-                Gerenciar / Detalhes
+                Detalhes
                 <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
               </Link>
             </li>
