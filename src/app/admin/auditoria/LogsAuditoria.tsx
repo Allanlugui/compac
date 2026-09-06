@@ -36,6 +36,11 @@ const CLASSE_ACAO: Record<AuditoriaAcao, string> = {
   MEMBERSHIP_CHANGE: "bg-violet-100 text-violet-800 ring-violet-200",
   ROLE_CHANGE: "bg-violet-100 text-violet-800 ring-violet-200",
   QR_REGENERATED: "bg-orange-100 text-orange-800 ring-orange-200",
+  TRIAGEM: "bg-yellow-100 text-yellow-800 ring-yellow-200",
+  OS_CONCLUIDA: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+  CHECKLIST_CONCLUIDA: "bg-sky-100 text-sky-800 ring-sky-200",
+  FOTO_ADICIONADA: "bg-zinc-200 text-zinc-700 ring-zinc-300",
+  COST_ADDED: "bg-amber-100 text-amber-800 ring-amber-200",
 };
 
 const ROTULO_ACAO: Record<AuditoriaAcao, string> = {
@@ -53,6 +58,11 @@ const ROTULO_ACAO: Record<AuditoriaAcao, string> = {
   MEMBERSHIP_CHANGE: "Membro",
   ROLE_CHANGE: "Perfil",
   QR_REGENERATED: "QR novo",
+  TRIAGEM: "Triagem",
+  OS_CONCLUIDA: "O.S.",
+  CHECKLIST_CONCLUIDA: "Checklist",
+  FOTO_ADICIONADA: "Foto",
+  COST_ADDED: "Custo",
 };
 
 /** Link contextual para o registro afetado, quando houver tela correspondente. */

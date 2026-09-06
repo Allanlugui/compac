@@ -11,10 +11,10 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import type { ChamadoStatus, ImpactoOperacional } from "@/lib/types";
+import type { ChamadoStatus, ImpactoOperacional, OsStatus } from "@/lib/types";
 import { formatarDataHora } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import StatusBadge from "@/app/admin/_components/StatusBadge";
+import StatusBadge, { OsStatusBadge } from "@/app/admin/_components/StatusBadge";
 import ImpactoBadge, { IMPACTOS } from "@/app/admin/_components/ImpactoBadge";
 import PageHeader from "@/components/ui/PageHeader";
 import StatCard, { type Tom } from "@/components/ui/StatCard";
@@ -27,18 +27,26 @@ export const metadata: Metadata = {
 
 const ABAS = [
   { id: "todos", rotulo: "Todos" },
-  { id: "aberto", rotulo: "Abertos" },
-  { id: "em_andamento", rotulo: "Em andamento" },
-  { id: "concluido", rotulo: "Concluídos" },
+  { id: "novos", rotulo: "Novos" },
+  { id: "em_os", rotulo: "Em O.S." },
+  { id: "concluidos", rotulo: "Concluídos" },
+  { id: "cancelados", rotulo: "Cancelados" },
 ] as const;
 
 type AbaId = (typeof ABAS)[number]["id"];
 
-const STATUS_VALIDOS: ChamadoStatus[] = ["aberto", "em_andamento", "concluido"];
+const STATUS_NOVOS: ChamadoStatus[] = ["aberto", "em_triagem", "aguardando_informacao"];
+const STATUS_OS: ChamadoStatus[] = ["convertido_os", "em_andamento"];
+const STATUS_OK: ChamadoStatus[] = ["resolvido", "concluido"];
 
-/** Acento lateral do card por status. */
+/** Acento lateral do card por grupo de status. */
 const ACENTO_STATUS: Record<ChamadoStatus, string> = {
   aberto: "bg-amber-400",
+  em_triagem: "bg-yellow-400",
+  aguardando_informacao: "bg-orange-400",
+  convertido_os: "bg-sky-400",
+  resolvido: "bg-emerald-400",
+  cancelado: "bg-zinc-300",
   em_andamento: "bg-sky-400",
   concluido: "bg-emerald-400",
 };
@@ -54,6 +62,7 @@ interface ChamadoResumo {
   descricao: string;
   status: ChamadoStatus;
   impacto: ImpactoOperacional | null;
+  os_status: OsStatus | null;
   created_at: string;
   ativos: { nome: string } | { nome: string }[] | null;
 }
@@ -68,7 +77,7 @@ function nomeDoAtivo(ativos: ChamadoResumo["ativos"]): string {
 export default async function DashboardPage({ searchParams }: DashboardProps) {
   const { status, impacto } = await searchParams;
   const aba: AbaId =
-    status === "aberto" || status === "em_andamento" || status === "concluido"
+    status === "novos" || status === "em_os" || status === "concluidos" || status === "cancelados"
       ? status
       : "todos";
   const filtroImpacto: ImpactoOperacional | null =
@@ -84,24 +93,30 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
   const ctx = await requireOrg();
   const { data } = await supabase
     .from("chamados")
-    .select("id, solicitante, descricao, status, impacto, created_at, ativo_id, ativos(id, nome, localizacao)")
+    .select("id, solicitante, descricao, status, impacto, os_status, created_at, ativo_id, ativos(id, nome, localizacao)")
     .eq("organization_id", ctx.orgId)
     .order("created_at", { ascending: false });
 
   const chamados = (data ?? []) as unknown as ChamadoResumo[];
 
-  const contagem: Record<ChamadoStatus, number> = {
-    aberto: 0,
-    em_andamento: 0,
-    concluido: 0,
+  const emGrupo = (c: ChamadoResumo, grupo: AbaId): boolean => {
+    if (grupo === "todos") return true;
+    if (grupo === "novos") return STATUS_NOVOS.includes(c.status);
+    if (grupo === "em_os") return STATUS_OS.includes(c.status);
+    if (grupo === "concluidos") return STATUS_OK.includes(c.status);
+    return c.status === "cancelado";
   };
-  for (const c of chamados) {
-    if (STATUS_VALIDOS.includes(c.status)) contagem[c.status] += 1;
-  }
+
+  const contagem: Record<Exclude<AbaId, "todos">, number> = {
+    novos: chamados.filter((c) => STATUS_NOVOS.includes(c.status)).length,
+    em_os: chamados.filter((c) => STATUS_OS.includes(c.status)).length,
+    concluidos: chamados.filter((c) => STATUS_OK.includes(c.status)).length,
+    cancelados: chamados.filter((c) => c.status === "cancelado").length,
+  };
 
   const visiveis = chamados.filter(
     (c) =>
-      (aba === "todos" || c.status === aba) &&
+      emGrupo(c, aba) &&
       (!filtroImpacto || c.impacto === filtroImpacto),
   );
 
@@ -114,9 +129,9 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
   }
 
   const kpis: { rotulo: string; valor: number; Icone: (p: { className?: string }) => React.ReactNode; tom: Tom }[] = [
-    { rotulo: "Abertos", valor: contagem.aberto, Icone: Ticket, tom: "amber" },
-    { rotulo: "Em andamento", valor: contagem.em_andamento, Icone: Hourglass, tom: "sky" },
-    { rotulo: "Concluídos", valor: contagem.concluido, Icone: CircleCheck, tom: "emerald" },
+    { rotulo: "Novos", valor: contagem.novos, Icone: Ticket, tom: "amber" },
+    { rotulo: "Em O.S.", valor: contagem.em_os, Icone: Hourglass, tom: "sky" },
+    { rotulo: "Concluídos", valor: contagem.concluidos, Icone: CircleCheck, tom: "emerald" },
     { rotulo: "Total", valor: chamados.length, Icone: ClipboardList, tom: "zinc" },
   ];
 
@@ -124,10 +139,18 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
     <div className="space-y-6">
       <PageHeader
         titulo="Dashboard"
-        descricao="Acompanhe os chamados de manutenção por status."
+        descricao="Demandas, triagem e O.S. por estágio."
         acoes={
-          <span className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-bold text-white tabular-nums">
-            {visiveis.length} em exibição
+          <span className="flex items-center gap-2">
+            <span className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-bold text-white tabular-nums">
+              {visiveis.length} em exibição
+            </span>
+            <Link
+              href="/admin/chamados/novo"
+              className="inline-flex min-h-[40px] items-center rounded-full bg-white px-4 text-xs font-bold text-zinc-900 ring-1 ring-zinc-300 transition hover:bg-zinc-100"
+            >
+              + Novo chamado
+            </Link>
           </span>
         }
       />
@@ -148,7 +171,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
           const total =
             id === "todos"
               ? chamados.filter((c) => !filtroImpacto || c.impacto === filtroImpacto).length
-              : contagem[id as ChamadoStatus];
+              : contagem[id];
           const ativo = aba === id;
           return (
             <Link
@@ -240,6 +263,7 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                     {nomeDoAtivo(chamado.ativos)}
                   </h2>
                   <StatusBadge status={chamado.status} />
+                  {chamado.os_status && <OsStatusBadge status={chamado.os_status} />}
                   <ImpactoBadge impacto={chamado.impacto} />
                 </div>
                 <p className="mt-1.5 line-clamp-2 text-sm text-zinc-600">

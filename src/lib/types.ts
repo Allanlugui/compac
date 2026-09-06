@@ -3,7 +3,44 @@
  * Usados nas ETAPAs 3–5 (QR público, dashboard, compras e relatórios).
  */
 
-export type ChamadoStatus = "aberto" | "em_andamento" | "concluido";
+/** Status da demanda (chamado). Legados em_andamento/concluido mantidos. */
+export type ChamadoStatus =
+  | "aberto"
+  | "em_andamento"
+  | "concluido"
+  | "em_triagem"
+  | "aguardando_informacao"
+  | "convertido_os"
+  | "resolvido"
+  | "cancelado";
+
+/** Ciclo de vida da O.S. (nulo até a conversão na triagem). */
+export type OsStatus =
+  | "aberta"
+  | "planejada"
+  | "atribuida"
+  | "em_execucao"
+  | "aguardando_peca"
+  | "aguardando_terceiro"
+  | "em_validacao"
+  | "concluida"
+  | "encerrada";
+
+export type OsTipo =
+  | "corretiva"
+  | "preventiva"
+  | "preditiva"
+  | "inspecao"
+  | "instalacao"
+  | "melhoria";
+
+export type OrigemChamado =
+  | "qr"
+  | "portal"
+  | "administrador"
+  | "telefone"
+  | "email"
+  | "importacao";
 
 export interface Ativo {
   id: string;
@@ -115,8 +152,33 @@ export interface Chamado {
   diagnostico: string | null;
   solucao: string | null;
   horimetro: number | null;
-  /** Impacto operacional (schema_v5, nullable p/ chamados legados). */
   impacto: ImpactoOperacional | null;
+  /** FASE 3 (schema_v10): triagem + O.S. */
+  origem: OrigemChamado | null;
+  departamento: string | null;
+  contato: string | null;
+  categoria: string | null;
+  subcategoria: string | null;
+  criticidade: "baixa" | "media" | "alta" | "critica" | null;
+  equipe: string | null;
+  supervisor: string | null;
+  os_tipo: OsTipo | null;
+  os_status: OsStatus | null;
+  plano_id: string | null;
+  planejamento: string | null;
+  ferramentas: string | null;
+  previsao_horas: number | null;
+  riscos: string | null;
+  causa: string | null;
+  causa_raiz: string | null;
+  data_inicio: string | null;
+  data_fim: string | null;
+  horimetro_ini: number | null;
+  horimetro_fim: number | null;
+  horimetro_unidade: "horas" | "km" | "ciclos" | "unidades" | null;
+  custo_mao_obra: number;
+  custo_outros: number;
+  custo_outros_desc: string | null;
 }
 
 export interface Compra {
@@ -177,7 +239,12 @@ export type AuditoriaAcao =
   | "STOCK_ADJUSTMENT"
   | "MEMBERSHIP_CHANGE"
   | "ROLE_CHANGE"
-  | "QR_REGENERATED";
+  | "QR_REGENERATED"
+  | "TRIAGEM"
+  | "OS_CONCLUIDA"
+  | "CHECKLIST_CONCLUIDA"
+  | "FOTO_ADICIONADA"
+  | "COST_ADDED";
 
 export interface AuditoriaLog {
   id: string;
@@ -280,12 +347,87 @@ export interface ChecklistModelo {
   created_at: string;
 }
 
+/**
+ * FASE 3 (schema_v10): O.S. — status, atividades, serviços, fotos,
+ * preventiva. Todas com organization_id (multi-tenant + RLS).
+ */
+
 export interface ChecklistItem {
   id: string;
   modelo_id: string;
   texto: string;
   obrigatorio: boolean;
   ordem: number;
+  /** FASE 3: tipo de resposta + regras. */
+  tipo: "ok_nok" | "sim_nao" | "texto" | "numero" | "selecao" | "data" | "hora" | "foto";
+  foto_obrigatoria: boolean;
+  obs_obrigatoria: boolean;
+  valor_esperado: string | null;
+  opcoes: string[];
+}
+
+export interface OsStatusHistorico {
+  id: string;
+  organization_id: string;
+  os_id: string;
+  de: string | null;
+  para: string;
+  motivo: string | null;
+  user_id: string | null;
+  created_at: string;
+}
+
+export interface OsAtividade {
+  id: string;
+  organization_id: string;
+  chamado_id: string;
+  descricao: string;
+  user_id: string | null;
+  executado_por: string | null;
+  created_at: string;
+}
+
+export interface OsServicoExterno {
+  id: string;
+  organization_id: string;
+  chamado_id: string;
+  fornecedor_id: string | null;
+  servico: string;
+  valor: number;
+  nota: string | null;
+  data_servico: string | null;
+  observacao: string | null;
+  created_at: string;
+}
+
+export interface OsFoto {
+  id: string;
+  organization_id: string;
+  chamado_id: string;
+  path: string;
+  categoria: "antes" | "durante" | "depois";
+  user_id: string | null;
+  created_at: string;
+}
+
+export type FrequenciaPreventiva = "dias" | "semanas" | "meses" | "horas" | "ciclos";
+
+export interface PlanoManutencao {
+  id: string;
+  organization_id: string;
+  ativo_id: string;
+  tipo: OsTipo;
+  atividade: string;
+  frequencia: number;
+  unidade: FrequenciaPreventiva;
+  responsavel: string | null;
+  checklist_modelo_id: string | null;
+  ultima_execucao: string | null;
+  proxima_execucao: string | null;
+  tolerancia_dias: number;
+  prioridade: "baixa" | "media" | "alta" | "critica" | null;
+  ativo: boolean;
+  created_at: string;
 }
 
 export interface Notificacao {

@@ -11,6 +11,7 @@ import {
   formatarMoeda,
   numeroOS,
 } from "@/lib/format";
+import { resolverFoto } from "@/lib/storage";
 import StatusBadge from "@/app/admin/_components/StatusBadge";
 import BotaoImprimir from "./BotaoImprimir";
 
@@ -70,7 +71,15 @@ export default async function OsPage({ params }: OsPageProps) {
   const supabase = await createClient();
   const ctx = await requireOrg();
 
-  const [{ data: chamadoData }, { data: comprasData }] = await Promise.all([
+  const [
+    { data: chamadoData },
+    { data: comprasData },
+    { data: ativData },
+    { data: servData },
+    { data: osHistData },
+    { data: fotosDuranteData },
+    { data: execsData },
+  ] = await Promise.all([
     supabase
       .from("chamados")
       .select("*, ativos(id, nome, localizacao)")
@@ -83,12 +92,60 @@ export default async function OsPage({ params }: OsPageProps) {
       .eq("id", id)
       .eq("organization_id", ctx.orgId)
       .order("data_compra", { ascending: true }),
+    supabase
+      .from("os_atividades")
+      .select("descricao, executado_por, created_at")
+      .eq("chamado_id", id)
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("os_servicos_externos")
+      .select("servico, valor, nota, data_servico, fornecedores(nome)")
+      .eq("chamado_id", id)
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("os_status_historico")
+      .select("de, para, motivo, created_at")
+      .eq("os_id", id)
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("os_fotos")
+      .select("path")
+      .eq("chamado_id", id)
+      .eq("organization_id", ctx.orgId)
+      .eq("categoria", "durante")
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("checklist_execucoes")
+      .select("resultado, executado_por, created_at")
+      .eq("chamado_id", id)
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: true }),
   ]);
 
   const chamado = (chamadoData ?? null) as ChamadoComAtivo | null;
   const compras = ((comprasData ?? []) as Compra[]).slice().sort(
     (a, b) => +new Date(a.data_compra) - +new Date(b.data_compra),
   );
+  const atividades = (ativData ?? []) as {
+    descricao: string; executado_por: string | null; created_at: string;
+  }[];
+  const servicos = ((servData ?? []) as unknown as {
+    servico: string; valor: number; nota: string | null; data_servico: string | null;
+    fornecedores: { nome: string } | null;
+  }[]);
+  const osHist = (osHistData ?? []) as {
+    de: string | null; para: string; motivo: string | null; created_at: string;
+  }[];
+  const fotosDurantePaths = ((fotosDuranteData ?? []) as { path: string }[]).map((f) => f.path);
+  const fotosDuranteUrls = (
+    await Promise.all(fotosDurantePaths.map((p) => resolverFoto(p, ctx.orgId)))
+  ).filter((u) => u !== "");
+  const execs = (execsData ?? []) as {
+    resultado: string | null; executado_por: string; created_at: string;
+  }[];
 
   if (!chamado) {
     return (
@@ -112,10 +169,16 @@ export default async function OsPage({ params }: OsPageProps) {
   const fotosDepois = Array.isArray(chamado.fotos_depois)
     ? chamado.fotos_depois
     : [];
-  const totalCustos = compras.reduce(
+  const totalMateriais = compras.reduce(
     (soma, c) => soma + Number(c.valor_total ?? 0),
     0,
   );
+  const totalTerceiros = servicos.reduce((soma, x) => soma + Number(x.valor ?? 0), 0);
+  const totalCustos =
+    totalMateriais +
+    totalTerceiros +
+    Number(chamado.custo_mao_obra ?? 0) +
+    Number(chamado.custo_outros ?? 0);
   const os = numeroOS(chamado.id);
   const emissao = new Date();
 
@@ -201,14 +264,93 @@ export default async function OsPage({ params }: OsPageProps) {
           </p>
         </section>
 
+        {/* Triagem */}
+        <section className="mt-6">
+          <h2 className="border-b-2 border-zinc-900 pb-1 text-sm font-bold tracking-wide uppercase">
+            3 · Triagem
+          </h2>
+          <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="font-semibold text-zinc-600">Origem:</dt>
+              <dd>{chamado.origem ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-zinc-600">Tipo de O.S.:</dt>
+              <dd>{chamado.os_tipo ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-zinc-600">Categoria:</dt>
+              <dd>{[chamado.categoria, chamado.subcategoria].filter(Boolean).join(" / ") || "—"}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-zinc-600">Impacto / Criticidade:</dt>
+              <dd>{[chamado.impacto, chamado.criticidade].filter(Boolean).join(" / ") || "—"}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-zinc-600">Responsável / Equipe:</dt>
+              <dd>{[chamado.responsavel, chamado.equipe].filter(Boolean).join(" · ") || "—"}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-zinc-600">Prazo:</dt>
+              <dd>{chamado.prazo ? formatarData(chamado.prazo) : "—"}</dd>
+            </div>
+          </dl>
+          {osHist.length > 0 && (
+            <ul className="mt-3 space-y-1 text-sm">
+              {osHist.map((h, i) => (
+                <li key={i}>
+                  {h.de ? `${h.de} → ` : ""}<strong>{h.para}</strong>
+                  {h.motivo ? ` — ${h.motivo}` : ""} · {formatarDataHora(h.created_at)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* Planejamento */}
+        {(chamado.planejamento || chamado.ferramentas || chamado.previsao_horas !== null || chamado.riscos) && (
+          <section className="mt-6 break-inside-avoid">
+            <h2 className="border-b-2 border-zinc-900 pb-1 text-sm font-bold tracking-wide uppercase">
+              4 · Planejamento
+            </h2>
+            <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+              {chamado.planejamento && (
+                <div className="sm:col-span-2">
+                  <dt className="font-semibold text-zinc-600">Trabalho:</dt>
+                  <dd className="whitespace-pre-wrap">{chamado.planejamento}</dd>
+                </div>
+              )}
+              {chamado.ferramentas && (
+                <div>
+                  <dt className="font-semibold text-zinc-600">Ferramentas/recursos:</dt>
+                  <dd className="whitespace-pre-wrap">{chamado.ferramentas}</dd>
+                </div>
+              )}
+              {chamado.previsao_horas !== null && (
+                <div>
+                  <dt className="font-semibold text-zinc-600">Previsão:</dt>
+                  <dd>{String(chamado.previsao_horas)} h</dd>
+                </div>
+              )}
+              {chamado.riscos && (
+                <div className="sm:col-span-2">
+                  <dt className="font-semibold text-zinc-600">Riscos:</dt>
+                  <dd className="whitespace-pre-wrap">{chamado.riscos}</dd>
+                </div>
+              )}
+            </dl>
+          </section>
+        )}
+
         {/* Fotos */}
-        <FotosOS titulo="3 · Fotos — antes" fotos={fotosAntes} />
-        <FotosOS titulo="4 · Fotos — depois" fotos={fotosDepois} />
+        <FotosOS titulo="5 · Fotos — antes" fotos={fotosAntes} />
+        <FotosOS titulo="6 · Fotos — durante" fotos={fotosDuranteUrls} />
+        <FotosOS titulo="7 · Fotos — depois" fotos={fotosDepois} />
 
         {/* Custos */}
         <section className="mt-6 break-inside-avoid">
           <h2 className="border-b-2 border-zinc-900 pb-1 text-sm font-bold tracking-wide uppercase">
-            5 · Peças, insumos e custos
+            8 · Peças, serviços e custos
           </h2>
           {compras.length === 0 ? (
             <p className="mt-2 text-sm text-zinc-500">
@@ -241,6 +383,26 @@ export default async function OsPage({ params }: OsPageProps) {
                 ))}
               </tbody>
               <tfoot>
+                <tr>
+                  <td colSpan={3} className="py-1.5 pr-2 text-right text-zinc-600">Materiais</td>
+                  <td colSpan={2} className="py-1.5">{formatarMoeda(totalMateriais)}</td>
+                </tr>
+                <tr>
+                  <td colSpan={3} className="py-1.5 pr-2 text-right text-zinc-600">
+                    Terceiros ({servicos.length} serviço(s))
+                  </td>
+                  <td colSpan={2} className="py-1.5">{formatarMoeda(totalTerceiros)}</td>
+                </tr>
+                <tr>
+                  <td colSpan={3} className="py-1.5 pr-2 text-right text-zinc-600">Mão de obra</td>
+                  <td colSpan={2} className="py-1.5">{formatarMoeda(Number(chamado.custo_mao_obra ?? 0))}</td>
+                </tr>
+                <tr>
+                  <td colSpan={3} className="py-1.5 pr-2 text-right text-zinc-600">
+                    Outros{chamado.custo_outros_desc ? ` (${chamado.custo_outros_desc})` : ""}
+                  </td>
+                  <td colSpan={2} className="py-1.5">{formatarMoeda(Number(chamado.custo_outros ?? 0))}</td>
+                </tr>
                 <tr className="font-black">
                   <td colSpan={3} className="py-2 pr-2 text-right uppercase">
                     Total geral
@@ -254,11 +416,68 @@ export default async function OsPage({ params }: OsPageProps) {
           )}
         </section>
 
-        {/* Conclusão */}
+        {/* Execução e conclusão */}
         <section className="mt-6 break-inside-avoid">
           <h2 className="border-b-2 border-zinc-900 pb-1 text-sm font-bold tracking-wide uppercase">
-            6 · Execução e conclusão
+            9 · Execução e conclusão
           </h2>
+          {(chamado.diagnostico || chamado.causa || chamado.causa_raiz || chamado.solucao) && (
+            <dl className="mt-3 grid gap-2 text-sm">
+              {chamado.diagnostico && (
+                <div>
+                  <dt className="font-semibold text-zinc-600">Diagnóstico:</dt>
+                  <dd className="whitespace-pre-wrap">{chamado.diagnostico}</dd>
+                </div>
+              )}
+              {chamado.causa && (
+                <div>
+                  <dt className="font-semibold text-zinc-600">Causa:</dt>
+                  <dd className="whitespace-pre-wrap">{chamado.causa}</dd>
+                </div>
+              )}
+              {chamado.causa_raiz && (
+                <div>
+                  <dt className="font-semibold text-zinc-600">Causa raiz:</dt>
+                  <dd className="whitespace-pre-wrap">{chamado.causa_raiz}</dd>
+                </div>
+              )}
+              {chamado.solucao && (
+                <div>
+                  <dt className="font-semibold text-zinc-600">Solução:</dt>
+                  <dd className="whitespace-pre-wrap">{chamado.solucao}</dd>
+                </div>
+              )}
+            </dl>
+          )}
+          {atividades.length > 0 && (
+            <div className="mt-3">
+              <p className="text-sm font-semibold text-zinc-600">Atividades:</p>
+              <ul className="mt-1 space-y-1 text-sm">
+                {atividades.map((a, i) => (
+                  <li key={i}>
+                    {formatarDataHora(a.created_at)} — {a.descricao}
+                    {a.executado_por ? ` (${a.executado_por})` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {execs.length > 0 && (
+            <p className="mt-3 text-sm">
+              <span className="font-semibold text-zinc-600">Checklists: </span>
+              {execs.length} execução(ões) —{" "}
+              {execs.map((e) => e.resultado ?? "?").join(", ")}
+            </p>
+          )}
+          {(chamado.horimetro_ini !== null || chamado.horimetro_fim !== null) && (
+            <p className="mt-2 text-sm">
+              <span className="font-semibold text-zinc-600">Contador: </span>
+              {chamado.horimetro_ini !== null ? String(chamado.horimetro_ini) : "—"}
+              {" → "}
+              {chamado.horimetro_fim !== null ? String(chamado.horimetro_fim) : "—"}
+              {chamado.horimetro_unidade ? ` ${chamado.horimetro_unidade}` : ""}
+            </p>
+          )}
           <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
             <div>
               <dt className="font-semibold text-zinc-600">Status atual:</dt>
@@ -267,6 +486,10 @@ export default async function OsPage({ params }: OsPageProps) {
             <div>
               <dt className="font-semibold text-zinc-600">Impacto operacional:</dt>
               <dd>{chamado.impacto ? (ROTULO_IMPACTO[chamado.impacto] ?? chamado.impacto) : "—"}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-zinc-600">O.S.:</dt>
+              <dd>{[chamado.os_tipo, chamado.os_status].filter(Boolean).join(" · ") || "—"}</dd>
             </div>
             <div>
               <dt className="font-semibold text-zinc-600">Data de conclusão:</dt>
@@ -288,7 +511,7 @@ export default async function OsPage({ params }: OsPageProps) {
         {/* Assinaturas */}
         <section className="mt-10 break-inside-avoid">
           <h2 className="border-b-2 border-zinc-900 pb-1 text-sm font-bold tracking-wide uppercase">
-            7 · Responsáveis
+            10 · Responsáveis
           </h2>
           <div className="mt-8 grid gap-8 sm:grid-cols-2">
             <div className="text-center">

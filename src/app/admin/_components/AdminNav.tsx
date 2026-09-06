@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Building2,
+  CalendarClock,
   ChartColumn,
+  ClipboardCheck,
   LayoutDashboard,
   LogOut,
   Package,
@@ -66,6 +68,20 @@ export const SECOES_NAV: SecaoNav[] = [
         Icone: Package,
         ativoEm: (p) => p.startsWith("/admin/estoque"),
         papeis: OPERACIONAL,
+      },
+      {
+        href: "/admin/preventivas",
+        rotulo: "Preventivas",
+        Icone: ClipboardCheck,
+        ativoEm: (p) => p.startsWith("/admin/preventivas"),
+        papeis: ["ADMIN", "GESTOR", "TECNICO"],
+      },
+      {
+        href: "/admin/calendario",
+        rotulo: "Calendário",
+        Icone: CalendarClock,
+        ativoEm: (p) => p.startsWith("/admin/calendario"),
+        papeis: TODOS,
       },
     ],
   },

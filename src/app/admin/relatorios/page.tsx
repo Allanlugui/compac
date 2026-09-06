@@ -104,9 +104,9 @@ export default async function RelatoriosPage({ searchParams }: RelatoriosProps) 
     noPeriodo(c.data_compra.slice(0, 10)),
   );
 
-  // ---------- KPIs ----------
+  // ---------- KPIs (concluído = legado + resolvido) ----------
   const concluidos = chamados.filter(
-    (c) => c.status === "concluido" && c.concluido_em,
+    (c) => (c.status === "concluido" || c.status === "resolvido") && c.concluido_em,
   );
   const tempos = concluidos
     .map((c) => +new Date(c.concluido_em as string) - +new Date(c.created_at))
@@ -119,8 +119,8 @@ export default async function RelatoriosPage({ searchParams }: RelatoriosProps) 
   );
 
   // ---------- SLA e distribuição por status (dados reais) ----------
-  const porStatus = { aberto: 0, em_andamento: 0, concluido: 0 };
-  for (const c of chamados) porStatus[c.status] += 1;
+  const porStatus: Record<string, number> = { aberto: 0, em_andamento: 0, concluido: 0 };
+  for (const c of chamados) porStatus[c.status] = (porStatus[c.status] ?? 0) + 1;
   const comPrazo = concluidos.filter((c) => c.prazo);
   const noPrazo = comPrazo.filter(
     (c) => (c.concluido_em as string).slice(0, 10) <= (c.prazo as string),

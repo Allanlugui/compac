@@ -93,7 +93,7 @@ export async function uploadFotoQR(
  */
 export async function uploadFotoAdmin(
   file: File,
-  pasta: "depois" | "checklist" | "geral",
+  pasta: "depois" | "checklist" | "geral" | "os",
   referenciaId: string,
 ): Promise<UploadResult & { orgId?: string }> {
   const erroArquivo = validarArquivo(file);

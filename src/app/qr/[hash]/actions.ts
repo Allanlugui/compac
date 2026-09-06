@@ -87,6 +87,18 @@ export async function criarChamado(
   }
 
   const id = data.id as string;
+  // Metadados das fotos do antes (visitante: user_id null; autor no audit).
+  if (fotosAntes.length > 0) {
+    await svc.from("os_fotos").insert(
+      fotosAntes.map((path) => ({
+        organization_id: orgId,
+        chamado_id: id,
+        path,
+        categoria: "antes",
+        user_id: null,
+      })),
+    );
+  }
   await svc.from("auditoria_logs").insert({
     tabela: "chamados",
     registro_id: id,

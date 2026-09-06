@@ -16,19 +16,32 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import type { ChamadoComAtivo, Compra } from "@/lib/types";
+import { pode } from "@/lib/permissoes";
+import { resolverFoto } from "@/lib/storage";
+import type {
+  ChamadoComAtivo,
+  Compra,
+  OsAtividade,
+  OsFoto,
+  OsServicoExterno,
+  OsStatusHistorico,
+} from "@/lib/types";
 import { formatarDataHora, formatarMoeda } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import StatusBadge from "@/app/admin/_components/StatusBadge";
-import ImpactoBadge from "@/app/admin/_components/ImpactoBadge";
+import StatusBadge, { OsStatusBadge } from "@/app/admin/_components/StatusBadge";
 import GaleriaFotos from "@/app/admin/_components/GaleriaFotos";
-import StatusControl from "./StatusControl";
-import ImpactoControl from "./ImpactoControl";
+import TriagemForm from "./TriagemForm";
+import OsWorkflowControl from "./OsWorkflowControl";
+import PlanejamentoForm from "./PlanejamentoForm";
 import FotosDepoisUpload from "./FotosDepoisUpload";
+import FotosDurante from "./FotosDurante";
 import ComprasDoChamado from "./ComprasDoChamado";
 import ExecucaoForm from "./ExecucaoForm";
 import ConsumoEstoque from "./ConsumoEstoque";
-import ExecucaoChecklist from "./ExecucaoChecklist";
+import ExecucaoChecklist, { type ModeloExec, type ExecucaoPassada } from "./ExecucaoChecklist";
+import AtividadesList from "./AtividadesList";
+import ServicosList from "./ServicosList";
+import CustosForm from "./CustosForm";
 import TimelineOS, { type EventoOS } from "./TimelineOS";
 
 export const metadata: Metadata = {
@@ -61,10 +74,28 @@ function Secao({
   );
 }
 
+/** SLA a partir do prazo: no prazo / próximo (≤2d) / atrasado. */
+function sla(hoje: string, prazo: string | null, fim: string | null): string | null {
+  if (!prazo) return null;
+  const ref = (fim ?? hoje).slice(0, 10);
+  if (ref <= prazo) {
+    const dias = Math.round((+new Date(prazo) - +new Date(ref)) / 86400000);
+    return dias <= 2 ? "Próximo do vencimento" : "No prazo";
+  }
+  return "Atrasado";
+}
+
 export default async function ChamadoPage({ params }: ChamadoPageProps) {
   const { id } = await params;
   const supabase = await createClient();
   const ctx = await requireOrg();
+
+  const podeTriagem = pode(ctx, "chamados.triagem");
+  const podeExecutar = pode(ctx, "os.executar");
+  const podePlanejar = pode(ctx, "os.planejar");
+  const podeConcluir = pode(ctx, "os.concluir");
+  const podeEncerrar = pode(ctx, "os.encerrar");
+  const podeAprovar = pode(ctx, "os.aprovar");
 
   const [
     { data: chamadoData },
@@ -72,6 +103,12 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
     { data: produtosData },
     { data: modelosData },
     { data: logsData },
+    { data: osHistData },
+    { data: ativData },
+    { data: servData },
+    { data: fotosData },
+    { data: execsData },
+    { data: fornsData },
   ] = await Promise.all([
     supabase
       .from("chamados")
@@ -93,7 +130,7 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
       .order("codigo", { ascending: true }),
     supabase
       .from("checklist_modelos")
-      .select("id, titulo, ativo_id, checklist_itens(id, texto, obrigatorio, ordem)")
+      .select("id, titulo, ativo_id, checklist_itens(id, texto, tipo, obrigatorio, foto_obrigatoria, obs_obrigatoria, opcoes, ordem)")
       .eq("organization_id", ctx.orgId)
       .order("created_at", { ascending: true }),
     supabase
@@ -104,6 +141,41 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
       .eq("tabela", "chamados")
       .order("created_at", { ascending: true })
       .limit(100),
+    supabase
+      .from("os_status_historico")
+      .select("*")
+      .eq("os_id", id)
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("os_atividades")
+      .select("*")
+      .eq("chamado_id", id)
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("os_servicos_externos")
+      .select("*, fornecedores(nome)")
+      .eq("chamado_id", id)
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("os_fotos")
+      .select("*")
+      .eq("chamado_id", id)
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("checklist_execucoes")
+      .select("id, resultado, created_at, executado_por")
+      .eq("chamado_id", id)
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("fornecedores")
+      .select("id, nome")
+      .eq("organization_id", ctx.orgId)
+      .order("nome"),
   ]);
 
   const chamado = (chamadoData ?? null) as ChamadoComAtivo | null;
@@ -136,6 +208,11 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
   const fotosDepois = Array.isArray(chamado.fotos_depois)
     ? chamado.fotos_depois
     : [];
+  const fotosOs = (fotosData ?? []) as OsFoto[];
+  const fotosDurante = fotosOs.filter((f) => f.categoria === "durante").map((f) => f.path);
+  const duranteUrls = await Promise.all(
+    fotosDurante.map((p) => resolverFoto(p, ctx.orgId)),
+  );
 
   const produtos = ((produtosData ?? []) as {
     id: string;
@@ -153,23 +230,46 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
     id: string;
     titulo: string;
     ativo_id: string | null;
-    checklist_itens: { id: string; texto: string; obrigatorio: boolean; ordem: number }[];
+    checklist_itens: {
+      id: string; texto: string; tipo: string; obrigatorio: boolean;
+      foto_obrigatoria: boolean; obs_obrigatoria: boolean; opcoes: string[]; ordem: number;
+    }[];
   }[])
     .filter((m) => !m.ativo_id || m.ativo_id === chamado.ativo_id)
-    .map((m) => ({
+    .map((m): ModeloExec => ({
       id: m.id,
       titulo: m.titulo,
       itens: [...m.checklist_itens]
         .sort((a, b) => a.ordem - b.ordem)
-        .map((i) => ({ id: i.id, texto: i.texto, obrigatorio: i.obrigatorio })),
+        .map((i) => ({
+          id: i.id,
+          texto: i.texto,
+          obrigatorio: i.obrigatorio,
+          tipo: (i.tipo ?? "ok_nok") as ModeloExec["itens"][number]["tipo"],
+          foto_obrigatoria: i.foto_obrigatoria ?? false,
+          obs_obrigatoria: i.obs_obrigatoria ?? false,
+          opcoes: (i.opcoes ?? []) as string[],
+        })),
     }));
+  const passadas = (execsData ?? []) as ExecucaoPassada[];
 
-  // Timeline derivada de dados reais (abertura, auditoria, insumos, conclusão).
+  const osHist = (osHistData ?? []) as OsStatusHistorico[];
+  const atividades = (ativData ?? []) as OsAtividade[];
+  const servicos = ((servData ?? []) as (OsServicoExterno & { fornecedores: { nome: string } | null })[]).map(
+    (s) => ({ ...s, fornecedor_nome: s.fornecedores?.nome ?? null }),
+  );
+  const totalServicos = servicos.reduce((s, x) => s + Number(x.valor ?? 0), 0);
+  const totalMateriais = compras.reduce((s, c) => s + Number(c.valor_total ?? 0), 0);
+
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const slaRotulo = sla(hojeISO, chamado.prazo, chamado.concluido_em);
+
+  // Timeline unificada: abertura, auditoria, O.S., atividades, insumos, fotos, conclusão.
   const eventos: EventoOS[] = [
     {
       quando: chamado.created_at,
       titulo: "Chamado aberto",
-      detalhe: `por ${chamado.solicitante}`,
+      detalhe: `por ${chamado.solicitante}${chamado.origem ? ` · via ${chamado.origem}` : ""}`,
     },
     ...((logsData ?? []) as {
       acao: string;
@@ -180,6 +280,9 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
     }[]).flatMap((l): EventoOS[] => {
       const antes = l.dados_anteriores?.status;
       const depois = l.dados_novos?.status;
+      if (l.acao === "TRIAGEM") {
+        return [{ quando: l.created_at, titulo: "Triagem", detalhe: `por ${l.executado_por}` }];
+      }
       if ((l.acao === "STATUS_CHANGE" || l.acao === "UPDATE") && depois && depois !== antes) {
         return [{
           quando: l.created_at,
@@ -187,17 +290,40 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
           detalhe: `por ${l.executado_por}`,
         }];
       }
+      if (l.acao === "OS_CONCLUIDA") {
+        return [{ quando: l.created_at, titulo: "O.S. concluída/encerrada", detalhe: `por ${l.executado_por}` }];
+      }
+      if (l.acao === "CHECKLIST_CONCLUIDA") {
+        return [{ quando: l.created_at, titulo: "Checklist executado", detalhe: `por ${l.executado_por}` }];
+      }
       return [];
     }),
+    ...osHist.map((h): EventoOS => ({
+      quando: h.created_at,
+      titulo: h.de ? `O.S.: ${h.de} → ${h.para}` : `O.S. ${h.para}`,
+      detalhe: h.motivo ?? undefined,
+    })),
+    ...atividades.slice().reverse().map((a): EventoOS => ({
+      quando: a.created_at,
+      titulo: a.descricao,
+      detalhe: a.executado_por ?? undefined,
+    })),
     ...compras.map((c): EventoOS => ({
       quando: c.data_compra.length === 10 ? `${c.data_compra}T12:00:00` : c.created_at,
       titulo: `Insumo: ${c.item}`,
       detalhe: `${String(c.quantidade)} un · ${formatarMoeda(Number(c.valor_total ?? 0))}`,
     })),
+    ...servicos.map((s): EventoOS => ({
+      quando: s.created_at,
+      titulo: `Terceiro: ${s.servico}`,
+      detalhe: formatarMoeda(Number(s.valor ?? 0)),
+    })),
     ...(chamado.concluido_em
       ? [{ quando: chamado.concluido_em, titulo: "Serviço concluído" } as EventoOS]
       : []),
   ];
+
+  const ehOS = !!chamado.os_status;
 
   return (
     <div className="space-y-4">
@@ -210,13 +336,15 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
           <ArrowLeft className="size-4" />
           Dashboard
         </Link>
-        <Link
-          href={`/admin/chamados/${chamado.id}/os`}
-          className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-2xl bg-gradient-to-b from-zinc-800 to-zinc-950 px-5 text-sm font-bold text-white shadow-xl transition hover:brightness-125"
-        >
-          <FileText className="size-4" />
-          Gerar Ordem de Serviço Imprimível
-        </Link>
+        {ehOS && (
+          <Link
+            href={`/admin/chamados/${chamado.id}/os`}
+            className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-2xl bg-gradient-to-b from-zinc-800 to-zinc-950 px-5 text-sm font-bold text-white shadow-xl transition hover:brightness-125"
+          >
+            <FileText className="size-4" />
+            Ordem de Serviço Imprimível
+          </Link>
+        )}
       </div>
 
       {/* Hero do chamado */}
@@ -225,9 +353,9 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
           aria-hidden
           className={cn(
             "pointer-events-none absolute -top-20 -right-20 size-64 rounded-full blur-3xl",
-            chamado.status === "concluido" && "bg-emerald-500/20",
-            chamado.status === "em_andamento" && "bg-sky-500/20",
-            chamado.status === "aberto" && "bg-amber-500/20",
+            (chamado.status === "concluido" || chamado.status === "resolvido") && "bg-emerald-500/20",
+            (chamado.status === "em_andamento" || chamado.status === "convertido_os") && "bg-sky-500/20",
+            (chamado.status === "aberto" || chamado.status === "em_triagem") && "bg-amber-500/20",
           )}
         />
         <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -247,11 +375,21 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
                 <CalendarDays className="size-3.5" />
                 {formatarDataHora(chamado.created_at)}
               </span>
+              {slaRotulo && (
+                <span className={cn(
+                  "rounded-full px-2 py-0.5 text-[11px] font-black",
+                  slaRotulo === "Atrasado" && "bg-red-500/20 text-red-300",
+                  slaRotulo === "Próximo do vencimento" && "bg-amber-500/20 text-amber-300",
+                  slaRotulo === "No prazo" && "bg-emerald-500/20 text-emerald-300",
+                )}>
+                  SLA: {slaRotulo}
+                </span>
+              )}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <StatusBadge status={chamado.status} />
-            <ImpactoBadge impacto={chamado.impacto} />
+            {chamado.os_status && <OsStatusBadge status={chamado.os_status} />}
           </div>
         </div>
       </section>
@@ -277,7 +415,7 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
             <User className="mt-0.5 size-4 shrink-0 text-zinc-400" />
             <div>
               <dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                Solicitante
+                Solicitante{chamado.contato ? ` · ${chamado.contato}` : ""}
               </dt>
               <dd className="font-semibold text-zinc-900">{chamado.solicitante}</dd>
             </div>
@@ -286,13 +424,26 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
             <CalendarDays className="mt-0.5 size-4 shrink-0 text-zinc-400" />
             <div>
               <dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                Abertura
+                Abertura{chamado.origem ? ` · via ${chamado.origem}` : ""}
               </dt>
               <dd className="font-semibold text-zinc-900">
                 {formatarDataHora(chamado.created_at)}
               </dd>
             </div>
           </div>
+          {(chamado.departamento || chamado.categoria) && (
+            <div className="flex items-start gap-2 rounded-xl bg-zinc-50 p-3 ring-1 ring-zinc-200/70">
+              <FileText className="mt-0.5 size-4 shrink-0 text-zinc-400" />
+              <div>
+                <dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                  Classificação
+                </dt>
+                <dd className="font-semibold text-zinc-900">
+                  {[chamado.departamento, chamado.categoria, chamado.subcategoria].filter(Boolean).join(" · ")}
+                </dd>
+              </div>
+            </div>
+          )}
           {chamado.concluido_em && (
             <div className="flex items-start gap-2 rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-200/70">
               <CalendarDays className="mt-0.5 size-4 shrink-0 text-emerald-600" />
@@ -328,34 +479,135 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
         </div>
       </Secao>
 
-      {/* Controle de status */}
-      <Secao
-        icone={<Settings2 className="size-4" />}
-        titulo="Controle de status"
-      >
-        <div className="space-y-4">
-          <StatusControl chamadoId={chamado.id} statusAtual={chamado.status} />
-          <ImpactoControl chamadoId={chamado.id} impactoAtual={chamado.impacto} />
-        </div>
-      </Secao>
+      {/* Triagem / demanda */}
+      {!ehOS && (
+        <Secao
+          icone={<ClipboardCheck className="size-4" />}
+          titulo="Triagem"
+        >
+          {podeTriagem ? (
+            <TriagemForm
+              chamadoId={chamado.id}
+              statusAtual={chamado.status}
+              atual={{
+                prioridade: chamado.prioridade,
+                impacto: chamado.impacto,
+                criticidade: chamado.criticidade,
+                categoria: chamado.categoria,
+                subcategoria: chamado.subcategoria,
+                departamento: chamado.departamento,
+                responsavel: chamado.responsavel,
+                equipe: chamado.equipe,
+                prazo: chamado.prazo,
+              }}
+            />
+          ) : (
+            <p className="text-sm text-zinc-500">
+              Aguardando triagem pela gestão. Status atual: <strong>{chamado.status}</strong>.
+            </p>
+          )}
+        </Secao>
+      )}
+
+      {/* Workflow da O.S. */}
+      {ehOS && chamado.os_status && (
+        <Secao
+          icone={<Settings2 className="size-4" />}
+          titulo={`O.S. ${chamado.os_tipo ?? ""} · workflow`}
+        >
+          <OsWorkflowControl
+            chamadoId={chamado.id}
+            osAtual={chamado.os_status}
+            podeConcluir={podeConcluir}
+            podeEncerrar={podeEncerrar}
+          />
+        </Secao>
+      )}
+
+      {/* Planejamento */}
+      {ehOS && (
+        <Secao
+          icone={<ClipboardCheck className="size-4" />}
+          titulo="Planejamento"
+        >
+          {podePlanejar ? (
+            <PlanejamentoForm
+              chamadoId={chamado.id}
+              atual={{
+                planejamento: chamado.planejamento,
+                ferramentas: chamado.ferramentas,
+                previsao_horas: chamado.previsao_horas,
+                riscos: chamado.riscos,
+                responsavel: chamado.responsavel,
+                equipe: chamado.equipe,
+                supervisor: chamado.supervisor,
+                prazo: chamado.prazo,
+                prioridade: chamado.prioridade,
+              }}
+            />
+          ) : (
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Responsável</dt><dd className="font-semibold">{chamado.responsavel ?? "—"}{chamado.equipe ? ` · ${chamado.equipe}` : ""}</dd></div>
+              <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Previsão</dt><dd className="font-semibold">{chamado.previsao_horas !== null ? `${String(chamado.previsao_horas)} h` : "—"}</dd></div>
+            </dl>
+          )}
+        </Secao>
+      )}
 
       {/* Execução da O.S. */}
       <Secao
         icone={<Wrench className="size-4" />}
-        titulo="Execução da O.S."
+        titulo="Execução"
       >
-        <ExecucaoForm
-          chamadoId={chamado.id}
-          atual={{
-            responsavel: chamado.responsavel,
-            prioridade: chamado.prioridade,
-            prazo: chamado.prazo,
-            diagnostico: chamado.diagnostico,
-            solucao: chamado.solucao,
-            horimetro: chamado.horimetro,
-          }}
-        />
+        {podeExecutar ? (
+          <ExecucaoForm
+            chamadoId={chamado.id}
+            descricaoProblema={chamado.descricao}
+            atual={{
+              responsavel: chamado.responsavel,
+              prioridade: chamado.prioridade,
+              prazo: chamado.prazo,
+              diagnostico: chamado.diagnostico,
+              causa: chamado.causa,
+              causa_raiz: chamado.causa_raiz,
+              solucao: chamado.solucao,
+              equipe: chamado.equipe,
+              supervisor: chamado.supervisor,
+              horimetro: chamado.horimetro,
+              horimetro_ini: chamado.horimetro_ini,
+              horimetro_fim: chamado.horimetro_fim,
+              horimetro_unidade: chamado.horimetro_unidade,
+            }}
+          />
+        ) : (
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Diagnóstico</dt><dd>{chamado.diagnostico ?? "—"}</dd></div>
+            <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Solução</dt><dd>{chamado.solucao ?? "—"}</dd></div>
+          </dl>
+        )}
       </Secao>
+
+      {/* Atividades */}
+      {ehOS && (
+        <Secao
+          icone={<Clock className="size-4" />}
+          titulo="Atividades"
+        >
+          {podeExecutar ? (
+            <AtividadesList
+              chamadoId={chamado.id}
+              iniciais={atividades.map((a) => ({
+                id: a.id,
+                descricao: a.descricao,
+                executado_por: a.executado_por,
+                created_at: a.created_at,
+              }))}
+            />
+          ) : (
+            <p className="text-sm text-zinc-500">{atividades.length} atividade(s) registrada(s).</p>
+          )}
+        </Secao>
+      )}
 
       {/* Linha do tempo */}
       <Secao
@@ -365,19 +617,38 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
         <TimelineOS eventos={eventos} />
       </Secao>
 
-      {/* Fotos de conclusão */}
+      {/* Fotos */}
       <Secao
         icone={<Camera className="size-4" />}
-        titulo="Fotos de conclusão (depois)"
+        titulo="Fotos (antes / durante / depois)"
       >
         <div className="space-y-4">
-          <GaleriaFotos
-            fotos={fotosDepois}
-            legenda="Depois"
-            vazio="Nenhuma foto de conclusão enviada ainda."
-            orgId={ctx.orgId}
-          />
-          <FotosDepoisUpload chamadoId={chamado.id} />
+          <div>
+            <p className="mb-2 text-xs font-bold tracking-wide text-zinc-500 uppercase">Durante</p>
+            {podeExecutar ? (
+              <FotosDurante chamadoId={chamado.id} paths={fotosDurante} orgId={ctx.orgId} />
+            ) : (
+              <GaleriaFotos
+                fotos={fotosDurante}
+                legenda="Durante"
+                vazio="Nenhuma foto do durante ainda."
+                orgId={ctx.orgId}
+              />
+            )}
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-bold tracking-wide text-zinc-500 uppercase">Depois</p>
+            <GaleriaFotos
+              fotos={fotosDepois}
+              legenda="Depois"
+              vazio="Nenhuma foto de conclusão enviada ainda."
+              orgId={ctx.orgId}
+            />
+            {podeExecutar && <FotosDepoisUpload chamadoId={chamado.id} />}
+          </div>
+          {duranteUrls.some((u) => u === "") && (
+            <p className="text-xs text-zinc-400">Algumas fotos do durante não puderam ser resolvidas.</p>
+          )}
         </div>
       </Secao>
 
@@ -386,13 +657,13 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
         icone={<ClipboardCheck className="size-4" />}
         titulo="Checklist de execução"
       >
-        <ExecucaoChecklist chamadoId={chamado.id} modelos={modelos} />
+        <ExecucaoChecklist chamadoId={chamado.id} modelos={modelos} passadas={passadas} />
       </Secao>
 
-      {/* Insumos e compras */}
+      {/* Insumos, serviços e custos */}
       <Secao
         icone={<Package className="size-4" />}
-        titulo="Insumos e compras vinculados"
+        titulo="Materiais, terceiros e custos"
       >
         <div className="space-y-4">
           <div>
@@ -402,6 +673,38 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
             <ConsumoEstoque chamadoId={chamado.id} produtos={produtos} />
           </div>
           <ComprasDoChamado chamadoId={chamado.id} iniciais={compras} />
+          <div>
+            <p className="mb-2 text-xs font-bold tracking-wide text-zinc-500 uppercase">
+              Serviços externos
+            </p>
+            <ServicosList
+              chamadoId={chamado.id}
+              iniciais={servicos}
+              fornecedores={(fornsData ?? []) as { id: string; nome: string }[]}
+              podeExcluir={podeAprovar}
+            />
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-bold tracking-wide text-zinc-500 uppercase">
+              Custo total da O.S.
+            </p>
+            {podeAprovar ? (
+              <CustosForm
+                chamadoId={chamado.id}
+                totalMateriais={totalMateriais}
+                totalTerceiros={totalServicos}
+                atual={{
+                  custo_mao_obra: Number(chamado.custo_mao_obra ?? 0),
+                  custo_outros: Number(chamado.custo_outros ?? 0),
+                  custo_outros_desc: chamado.custo_outros_desc,
+                }}
+              />
+            ) : (
+              <p className="text-sm font-black">
+                {formatarMoeda(totalMateriais + totalServicos + Number(chamado.custo_mao_obra ?? 0) + Number(chamado.custo_outros ?? 0))}
+              </p>
+            )}
+          </div>
         </div>
       </Secao>
     </div>
