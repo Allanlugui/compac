@@ -3,20 +3,11 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, LoaderCircle, TriangleAlert, X } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { uploadFotoAdmin } from "@/lib/storage";
 import { adicionarFotosDepois } from "./actions";
 
 const MAX_FOTOS_POR_ENVIO = 6;
-const MAX_BYTES_POR_FOTO = 8 * 1024 * 1024; // 8 MB
-const BUCKET = "manutencao-midia";
-
-function sanitizarNomeArquivo(nome: string): string {
-  return nome
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]/g, "_")
-    .slice(-60);
-}
+const MAX_BYTES_POR_FOTO = 8 * 1024 * 1024; // 8 MB (pré-checagem; servidor revalida)
 
 export default function FotosDepoisUpload({ chamadoId }: { chamadoId: string }) {
   const router = useRouter();
@@ -51,24 +42,17 @@ export default function FotosDepoisUpload({ chamadoId }: { chamadoId: string }) 
     if (enviando || arquivos.length === 0) return;
     setErro(null);
     try {
-      const supabase = createClient();
-      const urls: string[] = [];
+      // Upload via Server Action: path da org derivado da sessão.
+      const paths: string[] = [];
       for (let i = 0; i < arquivos.length; i++) {
         const file = arquivos[i];
         setFase(`Enviando foto ${i + 1} de ${arquivos.length}…`);
-        const caminho = `chamados/${chamadoId}/depois/${Date.now()}-${i + 1}-${sanitizarNomeArquivo(file.name)}`;
-        const { error: erroUpload } = await supabase.storage
-          .from(BUCKET)
-          .upload(caminho, file, {
-            contentType: file.type || "image/jpeg",
-            upsert: false,
-          });
-        if (erroUpload) throw new Error("Falha no envio das fotos.");
-        const { data } = supabase.storage.from(BUCKET).getPublicUrl(caminho);
-        urls.push(data.publicUrl);
+        const up = await uploadFotoAdmin(file, "depois", chamadoId);
+        if (!up.ok) throw new Error(up.error);
+        paths.push(up.path);
       }
       setFase("Salvando no chamado…");
-      const resultado = await adicionarFotosDepois({ chamadoId, urls });
+      const resultado = await adicionarFotosDepois({ chamadoId, urls: paths });
       if (!resultado.ok) throw new Error(resultado.error);
       setArquivos([]);
       router.refresh();

@@ -23,7 +23,7 @@ function hojeLabel(): string {
   });
 }
 
-export default function SolicitacaoForm() {
+export default function SolicitacaoForm({ tokenOrg }: { tokenOrg: string }) {
   const [setor, setSetor] = useState("");
   const [solicitante, setSolicitante] = useState("");
   const [item, setItem] = useState("");
@@ -47,6 +47,7 @@ export default function SolicitacaoForm() {
     setEnviando(true);
     try {
       const resultado = await criarSolicitacao({
+        tokenOrg,
         setor,
         solicitante,
         item,

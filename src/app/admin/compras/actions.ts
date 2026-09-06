@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrg } from "@/lib/org";
+import { exigirPapel } from "@/lib/roles";
 import { registrarLog } from "@/lib/auditoria";
 
 export type CompraResult = { ok: true } | { ok: false; error: string };
@@ -14,6 +16,8 @@ export interface CompraInput {
   dataCompra: string;
   /** Opcional: UUID do chamado ou "" para compra geral. */
   chamadoId: string;
+  /** Opcional: UUID do fornecedor ou "". */
+  fornecedorId: string;
 }
 
 interface CompraValidada {
@@ -23,6 +27,7 @@ interface CompraValidada {
   setor: string | null;
   dataCompra: string;
   chamadoId: string | null;
+  fornecedorId: string | null;
 }
 
 function validar(
@@ -53,6 +58,7 @@ function validar(
     ? input.dataCompra
     : new Date().toISOString().slice(0, 10);
   const chamadoId = input.chamadoId.trim() === "" ? null : input.chamadoId.trim();
+  const fornecedorId = input.fornecedorId.trim() === "" ? null : input.fornecedorId.trim();
 
   return {
     ok: true,
@@ -63,6 +69,7 @@ function validar(
       setor: setor === "" ? null : setor,
       dataCompra,
       chamadoId,
+      fornecedorId,
     },
   };
 }
@@ -73,11 +80,12 @@ function revalidarCompras() {
   revalidatePath("/admin/dashboard");
 }
 
-async function chamadoExiste(supabase: Awaited<ReturnType<typeof createClient>>, id: string) {
+async function chamadoExiste(supabase: Awaited<ReturnType<typeof createClient>>, id: string, orgId: string) {
   const { data } = await supabase
     .from("chamados")
     .select("id")
     .eq("id", id)
+    .eq("organization_id", orgId)
     .maybeSingle();
   return !!data;
 }
@@ -89,14 +97,28 @@ export async function criarCompra(input: CompraInput): Promise<CompraResult> {
   const { dados } = validacao;
 
   const supabase = await createClient();
-  if (dados.chamadoId && !(await chamadoExiste(supabase, dados.chamadoId))) {
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+
+  if (dados.chamadoId && !(await chamadoExiste(supabase, dados.chamadoId, ctx.orgId))) {
     return { ok: false, error: "Chamado vinculado não encontrado." };
+  }
+  if (dados.fornecedorId) {
+    const { data: forn } = await supabase
+      .from("fornecedores")
+      .select("id")
+      .eq("id", dados.fornecedorId)
+      .eq("organization_id", ctx.orgId)
+      .maybeSingle();
+    if (!forn) return { ok: false, error: "Fornecedor não encontrado." };
   }
 
   const { data: compra, error } = await supabase
     .from("compras")
     .insert({
+      organization_id: ctx.orgId,
       chamado_id: dados.chamadoId,
+      fornecedor_id: dados.fornecedorId,
       item: dados.item,
       quantidade: dados.quantidade,
       valor_unitario: dados.valorUnitario,
@@ -115,7 +137,9 @@ export async function criarCompra(input: CompraInput): Promise<CompraResult> {
     acao: "INSERT",
     dados_anteriores: null,
     dados_novos: { ...dados },
-    executado_por: "admin",
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
   });
   revalidarCompras();
   return { ok: true };
@@ -131,10 +155,14 @@ export async function atualizarCompra(
   const { dados } = validacao;
 
   const supabase = await createClient();
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+
   const { data: anterior } = await supabase
     .from("compras")
     .select("*")
     .eq("id", input.id)
+    .eq("organization_id", ctx.orgId)
     .maybeSingle();
 
   if (!anterior) return { ok: false, error: "Compra não encontrada." };
@@ -148,7 +176,8 @@ export async function atualizarCompra(
       setor: dados.setor,
       data_compra: dados.dataCompra,
     })
-    .eq("id", input.id);
+    .eq("id", input.id)
+    .eq("organization_id", ctx.orgId);
 
   if (error) return { ok: false, error: "Não foi possível atualizar a compra." };
   await registrarLog(supabase, {
@@ -157,7 +186,9 @@ export async function atualizarCompra(
     acao: "UPDATE",
     dados_anteriores: anterior as unknown as Record<string, unknown>,
     dados_novos: { ...dados },
-    executado_por: "admin",
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
   });
   revalidarCompras();
   return { ok: true };
@@ -168,15 +199,23 @@ export async function excluirCompra(input: { id: string }): Promise<CompraResult
   if (!input.id) return { ok: false, error: "Compra inválida." };
 
   const supabase = await createClient();
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+
   const { data: anterior } = await supabase
     .from("compras")
     .select("*")
     .eq("id", input.id)
+    .eq("organization_id", ctx.orgId)
     .maybeSingle();
 
   if (!anterior) return { ok: false, error: "Compra não encontrada." };
 
-  const { error } = await supabase.from("compras").delete().eq("id", input.id);
+  const { error } = await supabase
+    .from("compras")
+    .delete()
+    .eq("id", input.id)
+    .eq("organization_id", ctx.orgId);
 
   if (error) return { ok: false, error: "Não foi possível excluir a compra." };
   await registrarLog(supabase, {
@@ -185,7 +224,9 @@ export async function excluirCompra(input: { id: string }): Promise<CompraResult
     acao: "DELETE",
     dados_anteriores: anterior as unknown as Record<string, unknown>,
     dados_novos: null,
-    executado_por: "admin",
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
   });
   revalidarCompras();
   return { ok: true };

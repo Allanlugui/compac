@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   CalendarDays,
   Camera,
+  ClipboardCheck,
+  Clock,
   FileText,
   MapPin,
   Package,
@@ -13,14 +15,19 @@ import {
   Wrench,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrg } from "@/lib/org";
 import type { ChamadoComAtivo, Compra } from "@/lib/types";
-import { formatarDataHora } from "@/lib/format";
+import { formatarDataHora, formatarMoeda } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import StatusBadge from "@/app/admin/_components/StatusBadge";
 import GaleriaFotos from "@/app/admin/_components/GaleriaFotos";
 import StatusControl from "./StatusControl";
 import FotosDepoisUpload from "./FotosDepoisUpload";
 import ComprasDoChamado from "./ComprasDoChamado";
+import ExecucaoForm from "./ExecucaoForm";
+import ConsumoEstoque from "./ConsumoEstoque";
+import ExecucaoChecklist from "./ExecucaoChecklist";
+import TimelineOS, { type EventoOS } from "./TimelineOS";
 
 export const metadata: Metadata = {
   title: "Detalhe do chamado · SGA-M",
@@ -55,18 +62,46 @@ function Secao({
 export default async function ChamadoPage({ params }: ChamadoPageProps) {
   const { id } = await params;
   const supabase = await createClient();
+  const ctx = await requireOrg();
 
-  const [{ data: chamadoData }, { data: comprasData }] = await Promise.all([
+  const [
+    { data: chamadoData },
+    { data: comprasData },
+    { data: produtosData },
+    { data: modelosData },
+    { data: logsData },
+  ] = await Promise.all([
     supabase
       .from("chamados")
       .select("*, ativos(id, nome, localizacao)")
       .eq("id", id)
+      .eq("organization_id", ctx.orgId)
       .maybeSingle(),
     supabase
       .from("compras")
       .select("*")
       .eq("id", id)
+      .eq("organization_id", ctx.orgId)
       .order("data_compra", { ascending: true }),
+    supabase
+      .from("produtos")
+      .select("id, codigo, descricao, estoque_atual")
+      .eq("organization_id", ctx.orgId)
+      .eq("ativo", true)
+      .order("codigo", { ascending: true }),
+    supabase
+      .from("checklist_modelos")
+      .select("id, titulo, ativo_id, checklist_itens(id, texto, obrigatorio, ordem)")
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("auditoria_logs")
+      .select("acao, dados_anteriores, dados_novos, executado_por, created_at")
+      .eq("organization_id", ctx.orgId)
+      .eq("registro_id", id)
+      .eq("tabela", "chamados")
+      .order("created_at", { ascending: true })
+      .limit(100),
   ]);
 
   const chamado = (chamadoData ?? null) as ChamadoComAtivo | null;
@@ -99,6 +134,68 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
   const fotosDepois = Array.isArray(chamado.fotos_depois)
     ? chamado.fotos_depois
     : [];
+
+  const produtos = ((produtosData ?? []) as {
+    id: string;
+    codigo: string;
+    descricao: string;
+    estoque_atual: number;
+  }[]).map((p) => ({
+    id: p.id,
+    codigo: p.codigo,
+    descricao: p.descricao,
+    saldo: Number(p.estoque_atual ?? 0),
+  }));
+
+  const modelos = ((modelosData ?? []) as {
+    id: string;
+    titulo: string;
+    ativo_id: string | null;
+    checklist_itens: { id: string; texto: string; obrigatorio: boolean; ordem: number }[];
+  }[])
+    .filter((m) => !m.ativo_id || m.ativo_id === chamado.ativo_id)
+    .map((m) => ({
+      id: m.id,
+      titulo: m.titulo,
+      itens: [...m.checklist_itens]
+        .sort((a, b) => a.ordem - b.ordem)
+        .map((i) => ({ id: i.id, texto: i.texto, obrigatorio: i.obrigatorio })),
+    }));
+
+  // Timeline derivada de dados reais (abertura, auditoria, insumos, conclusão).
+  const eventos: EventoOS[] = [
+    {
+      quando: chamado.created_at,
+      titulo: "Chamado aberto",
+      detalhe: `por ${chamado.solicitante}`,
+    },
+    ...((logsData ?? []) as {
+      acao: string;
+      dados_anteriores: { status?: string } | null;
+      dados_novos: { status?: string } | null;
+      executado_por: string;
+      created_at: string;
+    }[]).flatMap((l): EventoOS[] => {
+      const antes = l.dados_anteriores?.status;
+      const depois = l.dados_novos?.status;
+      if ((l.acao === "STATUS_CHANGE" || l.acao === "UPDATE") && depois && depois !== antes) {
+        return [{
+          quando: l.created_at,
+          titulo: antes ? `Status: ${antes} → ${depois}` : "Chamado atualizado",
+          detalhe: `por ${l.executado_por}`,
+        }];
+      }
+      return [];
+    }),
+    ...compras.map((c): EventoOS => ({
+      quando: c.data_compra.length === 10 ? `${c.data_compra}T12:00:00` : c.created_at,
+      titulo: `Insumo: ${c.item}`,
+      detalhe: `${String(c.quantidade)} un · ${formatarMoeda(Number(c.valor_total ?? 0))}`,
+    })),
+    ...(chamado.concluido_em
+      ? [{ quando: chamado.concluido_em, titulo: "Serviço concluído" } as EventoOS]
+      : []),
+  ];
 
   return (
     <div className="space-y-4">
@@ -221,6 +318,7 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
             fotos={fotosAntes}
             legenda="Antes"
             vazio="Nenhuma foto do problema enviada."
+            orgId={ctx.orgId}
           />
         </div>
       </Secao>
@@ -233,6 +331,32 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
         <StatusControl chamadoId={chamado.id} statusAtual={chamado.status} />
       </Secao>
 
+      {/* Execução da O.S. */}
+      <Secao
+        icone={<Wrench className="size-4" />}
+        titulo="Execução da O.S."
+      >
+        <ExecucaoForm
+          chamadoId={chamado.id}
+          atual={{
+            responsavel: chamado.responsavel,
+            prioridade: chamado.prioridade,
+            prazo: chamado.prazo,
+            diagnostico: chamado.diagnostico,
+            solucao: chamado.solucao,
+            horimetro: chamado.horimetro,
+          }}
+        />
+      </Secao>
+
+      {/* Linha do tempo */}
+      <Secao
+        icone={<Clock className="size-4" />}
+        titulo="Linha do tempo"
+      >
+        <TimelineOS eventos={eventos} />
+      </Secao>
+
       {/* Fotos de conclusão */}
       <Secao
         icone={<Camera className="size-4" />}
@@ -243,9 +367,18 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
             fotos={fotosDepois}
             legenda="Depois"
             vazio="Nenhuma foto de conclusão enviada ainda."
+            orgId={ctx.orgId}
           />
           <FotosDepoisUpload chamadoId={chamado.id} />
         </div>
+      </Secao>
+
+      {/* Checklist */}
+      <Secao
+        icone={<ClipboardCheck className="size-4" />}
+        titulo="Checklist de execução"
+      >
+        <ExecucaoChecklist chamadoId={chamado.id} modelos={modelos} />
       </Secao>
 
       {/* Insumos e compras */}
@@ -253,7 +386,15 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
         icone={<Package className="size-4" />}
         titulo="Insumos e compras vinculados"
       >
-        <ComprasDoChamado chamadoId={chamado.id} iniciais={compras} />
+        <div className="space-y-4">
+          <div>
+            <p className="mb-2 text-xs font-bold tracking-wide text-zinc-500 uppercase">
+              Baixa do estoque
+            </p>
+            <ConsumoEstoque chamadoId={chamado.id} produtos={produtos} />
+          </div>
+          <ComprasDoChamado chamadoId={chamado.id} iniciais={compras} />
+        </div>
       </Secao>
     </div>
   );

@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrg } from "@/lib/org";
+import { exigirPapel } from "@/lib/roles";
 import { registrarLog } from "@/lib/auditoria";
+import { notificar } from "@/app/admin/notificacoes/actions";
 import type { SolicitacaoCompraStatus } from "@/lib/types";
 
 export type PedidoResult = { ok: true } | { ok: false; error: string };
@@ -34,10 +37,14 @@ export async function atualizarStatusPedido(input: {
   }
 
   const supabase = await createClient();
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+
   const { data: atual } = await supabase
     .from("solicitacoes_compra")
-    .select("id, status")
+    .select("id, status, item")
     .eq("id", input.id)
+    .eq("organization_id", ctx.orgId)
     .maybeSingle();
 
   if (!atual) return { ok: false, error: "Solicitação não encontrada." };
@@ -49,7 +56,8 @@ export async function atualizarStatusPedido(input: {
   const { error } = await supabase
     .from("solicitacoes_compra")
     .update({ status: input.status })
-    .eq("id", input.id);
+    .eq("id", input.id)
+    .eq("organization_id", ctx.orgId);
 
   if (error) {
     return { ok: false, error: "Não foi possível atualizar o pedido." };
@@ -58,11 +66,21 @@ export async function atualizarStatusPedido(input: {
   await registrarLog(supabase, {
     tabela: "solicitacoes_compra",
     registro_id: input.id,
-    acao: "UPDATE",
+    acao: input.status === "aprovado" ? "APPROVAL" : input.status === "rejeitado" ? "REJECTION" : "UPDATE",
     dados_anteriores: { status: atual.status },
     dados_novos: { status: input.status },
-    executado_por: "admin",
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
   });
+  if (input.status === "aprovado" || input.status === "rejeitado") {
+    await notificar({
+      tipo: "pedido",
+      titulo: `Pedido ${input.status === "aprovado" ? "aprovado" : "rejeitado"}: ${atual.item}`,
+      link: "/admin/compras",
+      orgId: ctx.orgId,
+    });
+  }
 
   revalidar();
   return { ok: true };
@@ -100,10 +118,14 @@ export async function efetivarPedido(
     : new Date().toISOString().slice(0, 10);
 
   const supabase = await createClient();
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
+
   const { data: pedido } = await supabase
     .from("solicitacoes_compra")
     .select("*")
     .eq("id", input.solicitacaoId)
+    .eq("organization_id", ctx.orgId)
     .maybeSingle();
 
   if (!pedido) return { ok: false, error: "Solicitação não encontrada." };
@@ -114,6 +136,7 @@ export async function efetivarPedido(
   const { data: compra, error: erroCompra } = await supabase
     .from("compras")
     .insert({
+      organization_id: ctx.orgId,
       chamado_id: null,
       item: pedido.item,
       quantidade: pedido.quantidade,
@@ -131,7 +154,8 @@ export async function efetivarPedido(
   const { error: erroStatus } = await supabase
     .from("solicitacoes_compra")
     .update({ status: "comprado" })
-    .eq("id", input.solicitacaoId);
+    .eq("id", input.solicitacaoId)
+    .eq("organization_id", ctx.orgId);
 
   if (erroStatus) {
     return {
@@ -151,7 +175,9 @@ export async function efetivarPedido(
       valor_unitario: valorUnitario,
       origem: `solicitacao:${input.solicitacaoId}`,
     },
-    executado_por: "admin",
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
   });
   await registrarLog(supabase, {
     tabela: "solicitacoes_compra",
@@ -159,7 +185,15 @@ export async function efetivarPedido(
     acao: "UPDATE",
     dados_anteriores: { status: "aprovado" },
     dados_novos: { status: "comprado", compra_id: compra.id },
-    executado_por: "admin",
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
+  });
+  await notificar({
+    tipo: "compra",
+    titulo: `Compra registrada: ${pedido.item}`,
+    link: "/admin/compras",
+    orgId: ctx.orgId,
   });
 
   revalidar();

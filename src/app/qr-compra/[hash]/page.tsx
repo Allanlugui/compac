@@ -7,7 +7,8 @@ import {
   PackageCheck,
   SearchX,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import { resolverOrgToken } from "./actions";
 import type { SolicitacaoCompra, SolicitacaoCompraStatus } from "@/lib/types";
 import { formatarDataHora, formatarMoeda } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -19,8 +20,9 @@ export const metadata: Metadata = {
 };
 
 interface QrCompraPageProps {
-  // Next.js 16: `params` é assíncrono e deve receber `await`.
+  // Next.js 16: `params` e `searchParams` são assíncronos.
   params: Promise<{ hash: string }>;
+  searchParams: Promise<{ t?: string }>;
 }
 
 const STATUS: Record<
@@ -51,15 +53,37 @@ const STATUS: Record<
 
 const ETAPAS: SolicitacaoCompraStatus[] = ["pendente", "aprovado", "comprado"];
 
-export default async function QrCompraPage({ params }: QrCompraPageProps) {
+export default async function QrCompraPage({ params, searchParams }: QrCompraPageProps) {
   const { hash } = await params;
+  const { t } = await searchParams;
 
-  // ---------- Rota de abertura: /qr-compra/nova ----------
+  // ---------- Rota de abertura: /qr-compra/nova?t=<token> ----------
+  // Sem token não há como saber a organização — e NÃO listamos tenants.
   if (hash === "nova") {
+    const org = await resolverOrgToken(typeof t === "string" ? t : "");
+    if (!org.ok) {
+      return (
+        <main className="flex min-h-dvh items-center justify-center bg-zinc-100 px-4 py-10">
+          <section className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
+            <SearchX className="mx-auto size-12 text-zinc-400" />
+            <h1 className="mt-3 text-lg font-bold text-zinc-900">
+              Escaneie o QR da sua unidade
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              A solicitação de compra é aberta pelo QR Code fixado na sua
+              unidade — ele identifica a organização com segurança.
+            </p>
+          </section>
+        </main>
+      );
+    }
     return (
       <main className="min-h-dvh bg-zinc-100 px-4 py-6">
         <div className="mx-auto w-full max-w-md">
-          <SolicitacaoForm />
+          <p className="mb-3 rounded-xl bg-emerald-50 px-4 py-2 text-center text-sm font-semibold text-emerald-800 ring-1 ring-emerald-200">
+            Solicitando para {org.nome}
+          </p>
+          <SolicitacaoForm tokenOrg={typeof t === "string" ? t : ""} />
           <p className="mt-4 text-center text-xs text-zinc-400">
             SGA-M · Solicitação de compras
           </p>
@@ -68,8 +92,9 @@ export default async function QrCompraPage({ params }: QrCompraPageProps) {
     );
   }
 
-  const supabase = await createClient();
-  const { data } = await supabase
+  // Tracking por token: lookup server-side, escopo mínimo.
+  const svc = createServiceClient();
+  const { data } = await svc
     .from("solicitacoes_compra")
     .select("*")
     .eq("qr_code_hash", hash)

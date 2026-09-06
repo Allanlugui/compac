@@ -1,8 +1,12 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import { gerarTokenPublico } from "@/lib/tokens";
 
 export interface CriarSolicitacaoInput {
+  /** Token de entrada da org (`?t=`), resolvido no servidor. Nunca org_id. */
+  tokenOrg: string;
   setor: string;
   solicitante: string;
   item: string;
@@ -15,21 +19,11 @@ export type CriarSolicitacaoResult =
   | { ok: true; id: string; hash: string }
   | { ok: false; error: string };
 
-// Alfabeto sem caracteres ambíguos (0/O, 1/l/I) — mesmo padrão dos ativos.
-const ALFABETO_HASH =
-  "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-
-function gerarHash(tamanho = 12): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(tamanho));
-  return Array.from(bytes, (b) => ALFABETO_HASH[b % ALFABETO_HASH.length]).join(
-    "",
-  );
-}
-
 /**
- * Registra uma solicitação de compra via QR Code e gera o log de
- * auditoria correspondente. O `qr_code_hash` devolvido é o link de
- * acompanhamento público: /qr-compra/{hash}.
+ * Solicitação pública de compra. A org é resolvida do `tokenOrg` no
+ * servidor (service) — o cliente nunca escolhe tenant. Insert via anon
+ * (RLS `solic_insert_publico`); audit via service (anon sem INSERT).
+ * Hash de acompanhamento: 24 chars (~140 bits).
  */
 export async function criarSolicitacao(
   input: CriarSolicitacaoInput,
@@ -59,14 +53,28 @@ export async function criarSolicitacao(
   if (!Number.isFinite(valorEstimado) || valorEstimado < 0) {
     return { ok: false, error: "Valor estimado inválido." };
   }
+  if (!input.tokenOrg || input.tokenOrg.length < 16) {
+    return { ok: false, error: "Código de entrada inválido. Use o QR da sua unidade." };
+  }
+
+  const svc = createServiceClient();
+  const { data: org } = await svc
+    .from("organizations")
+    .select("id, nome")
+    .eq("entry_token", input.tokenOrg)
+    .maybeSingle();
+  if (!org) {
+    return { ok: false, error: "Código de entrada inválido. Use o QR da sua unidade." };
+  }
+  const orgId = org.id as string;
 
   const supabase = await createClient();
-
   for (let tentativa = 0; tentativa < 5; tentativa++) {
-    const qr_code_hash = gerarHash(12);
+    const qr_code_hash = gerarTokenPublico(24);
     const { data, error } = await supabase
       .from("solicitacoes_compra")
       .insert({
+        organization_id: orgId,
         setor,
         solicitante,
         item,
@@ -79,12 +87,8 @@ export async function criarSolicitacao(
       .single();
 
     if (error) {
-      // 23505 = colisão de hash → tenta outro.
       if (error.code !== "23505") {
-        return {
-          ok: false,
-          error: "Não foi possível registrar. Tente novamente.",
-        };
+        return { ok: false, error: "Não foi possível registrar. Tente novamente." };
       }
       continue;
     }
@@ -93,27 +97,33 @@ export async function criarSolicitacao(
     }
 
     const id = data.id as string;
-
-    // Trilha de auditoria (Fase 4). Best-effort: não bloqueia a solicitação.
-    await supabase.from("auditoria_logs").insert({
+    await svc.from("auditoria_logs").insert({
       tabela: "solicitacoes_compra",
       registro_id: id,
       acao: "INSERT",
       dados_anteriores: null,
-      dados_novos: {
-        setor,
-        solicitante,
-        item,
-        quantidade,
-        justificativa,
-        valor_estimado: valorEstimado,
-        status: "pendente",
-      },
+      dados_novos: { setor, solicitante, item, quantidade, status: "pendente" },
       executado_por: solicitante,
+      organization_id: orgId,
     });
 
     return { ok: true, id, hash: qr_code_hash };
   }
 
   return { ok: false, error: "Tente novamente em instantes." };
+}
+
+/** Nome público da org para exibir no formulário (sem listar tenants). */
+export async function resolverOrgToken(
+  token: string,
+): Promise<{ ok: true; nome: string } | { ok: false }> {
+  if (!token || token.length < 16) return { ok: false };
+  const svc = createServiceClient();
+  const { data } = await svc
+    .from("organizations")
+    .select("nome")
+    .eq("entry_token", token)
+    .maybeSingle();
+  if (!data) return { ok: false };
+  return { ok: true, nome: data.nome as string };
 }

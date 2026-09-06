@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft, SearchX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrg } from "@/lib/org";
 import type { ChamadoComAtivo, Compra } from "@/lib/types";
 import {
   formatarData,
@@ -59,17 +60,20 @@ function FotosOS({ titulo, fotos }: { titulo: string; fotos: string[] }) {
 export default async function OsPage({ params }: OsPageProps) {
   const { id } = await params;
   const supabase = await createClient();
+  const ctx = await requireOrg();
 
   const [{ data: chamadoData }, { data: comprasData }] = await Promise.all([
     supabase
       .from("chamados")
       .select("*, ativos(id, nome, localizacao)")
       .eq("id", id)
+      .eq("organization_id", ctx.orgId)
       .maybeSingle(),
     supabase
       .from("compras")
       .select("*")
       .eq("id", id)
+      .eq("organization_id", ctx.orgId)
       .order("data_compra", { ascending: true }),
   ]);
 

@@ -18,8 +18,10 @@ function hojeISO(): string {
 
 export default function NovaCompraForm({
   chamados,
+  fornecedores,
 }: {
   chamados: ChamadoOpcao[];
+  fornecedores: ChamadoOpcao[];
 }) {
   const router = useRouter();
   const [item, setItem] = useState("");
@@ -28,6 +30,7 @@ export default function NovaCompraForm({
   const [setor, setSetor] = useState("");
   const [dataCompra, setDataCompra] = useState(hojeISO());
   const [chamadoId, setChamadoId] = useState("");
+  const [fornecedorId, setFornecedorId] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -49,6 +52,7 @@ export default function NovaCompraForm({
         setor,
         dataCompra,
         chamadoId,
+        fornecedorId,
       });
       if (!resultado.ok) throw new Error(resultado.error);
       setItem("");
@@ -57,6 +61,7 @@ export default function NovaCompraForm({
       setSetor("");
       setDataCompra(hojeISO());
       setChamadoId("");
+      setFornecedorId("");
       router.refresh();
     } catch (err) {
       setErro(
@@ -172,6 +177,24 @@ export default function NovaCompraForm({
             {chamados.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.rotulo}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-semibold text-zinc-800">
+            Fornecedor (opcional)
+          </span>
+          <select
+            value={fornecedorId}
+            onChange={(e) => setFornecedorId(e.target.value)}
+            disabled={salvando}
+            className={campo}
+          >
+            <option value="">Sem fornecedor</option>
+            {fornecedores.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.rotulo}
               </option>
             ))}
           </select>

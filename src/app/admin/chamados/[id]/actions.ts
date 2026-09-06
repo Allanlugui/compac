@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrg } from "@/lib/org";
+import { exigirPapel } from "@/lib/roles";
 import { registrarLog } from "@/lib/auditoria";
+import { notificar } from "@/app/admin/notificacoes/actions";
 import type { ChamadoStatus } from "@/lib/types";
 
 export type AcaoResult = { ok: true } | { ok: false; error: string };
@@ -27,10 +30,14 @@ export async function atualizarStatus(input: {
   }
 
   const supabase = await createClient();
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
+
   const { data: atual } = await supabase
     .from("chamados")
     .select("status")
     .eq("id", input.chamadoId)
+    .eq("organization_id", ctx.orgId)
     .maybeSingle();
 
   if (!atual) return { ok: false, error: "Chamado não encontrado." };
@@ -38,16 +45,26 @@ export async function atualizarStatus(input: {
   const { error } = await supabase
     .from("chamados")
     .update({ status: input.status })
-    .eq("id", input.chamadoId);
+    .eq("id", input.chamadoId)
+    .eq("organization_id", ctx.orgId);
 
   if (error) return { ok: false, error: "Não foi possível atualizar o status." };
   await registrarLog(supabase, {
     tabela: "chamados",
     registro_id: input.chamadoId,
-    acao: "UPDATE",
+    acao: "STATUS_CHANGE",
     dados_anteriores: { status: atual.status },
     dados_novos: { status: input.status },
-    executado_por: "admin",
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
+  });
+  await notificar({
+    tipo: "os",
+    titulo: `O.S. ${input.status === "concluido" ? "concluída" : input.status === "em_andamento" ? "em execução" : "reaberta"}`,
+    descricao: `Chamado atualizado por ${ctx.email}.`,
+    link: `/admin/chamados/${input.chamadoId}`,
+    orgId: ctx.orgId,
   });
   revalidarChamado(input.chamadoId);
   return { ok: true };
@@ -59,18 +76,24 @@ export async function adicionarFotosDepois(input: {
   urls: string[];
 }): Promise<AcaoResult> {
   if (!input.chamadoId) return { ok: false, error: "Chamado inválido." };
+  // Aceita paths do Storage privado (`o/{org}/...`) gerados pelo upload
+  // server-side. URLs legadas já gravadas não passam por aqui.
   const novas = (Array.isArray(input.urls) ? input.urls : []).filter(
-    (u) => typeof u === "string" && u.startsWith("http"),
+    (u) => typeof u === "string" && u.startsWith("o/") && !u.includes(".."),
   );
   if (novas.length === 0) {
     return { ok: false, error: "Nenhuma foto válida para anexar." };
   }
 
   const supabase = await createClient();
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
+
   const { data, error: erroLeitura } = await supabase
     .from("chamados")
     .select("fotos_depois")
     .eq("id", input.chamadoId)
+    .eq("organization_id", ctx.orgId)
     .maybeSingle();
 
   if (erroLeitura || !data) {
@@ -83,7 +106,8 @@ export async function adicionarFotosDepois(input: {
   const { error } = await supabase
     .from("chamados")
     .update({ fotos_depois: combinadas })
-    .eq("id", input.chamadoId);
+    .eq("id", input.chamadoId)
+    .eq("organization_id", ctx.orgId);
 
   if (error) return { ok: false, error: "Não foi possível salvar as fotos." };
   await registrarLog(supabase, {
@@ -95,7 +119,9 @@ export async function adicionarFotosDepois(input: {
       fotos_depois_adicionadas: novas.length,
       total_fotos_depois: combinadas.length,
     },
-    executado_por: "admin",
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
   });
   revalidarChamado(input.chamadoId);
   return { ok: true };
@@ -141,17 +167,21 @@ export async function registrarCompra(
     : new Date().toISOString().slice(0, 10);
 
   const supabase = await createClient();
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN", "GESTOR", "COMPRAS"]);
 
   const { data: chamado } = await supabase
     .from("chamados")
     .select("id")
     .eq("id", input.chamadoId)
+    .eq("organization_id", ctx.orgId)
     .maybeSingle();
   if (!chamado) return { ok: false, error: "Chamado não encontrado." };
 
   const { data: compra, error } = await supabase
     .from("compras")
     .insert({
+      organization_id: ctx.orgId,
       chamado_id: input.chamadoId,
       item,
       quantidade,
@@ -171,7 +201,71 @@ export async function registrarCompra(
     acao: "INSERT",
     dados_anteriores: null,
     dados_novos: { item, quantidade, chamado_id: input.chamadoId },
-    executado_por: "admin",
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
+  });
+  revalidarChamado(input.chamadoId);
+  return { ok: true };
+}
+
+export interface AtualizarExecucaoInput {
+  chamadoId: string;
+  responsavel: string;
+  prioridade: string;
+  prazo: string;
+  diagnostico: string;
+  solucao: string;
+  horimetro: number | null;
+}
+
+const PRIORIDADES = ["baixa", "media", "alta", "critica"];
+
+/** Dados operacionais da O.S.: responsável, prioridade, prazo, diagnóstico. */
+export async function atualizarExecucao(
+  input: AtualizarExecucaoInput,
+): Promise<AcaoResult> {
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
+  if (!input.chamadoId) return { ok: false, error: "Chamado inválido." };
+  if (input.prioridade !== "" && !PRIORIDADES.includes(input.prioridade)) {
+    return { ok: false, error: "Prioridade inválida." };
+  }
+
+  const supabase = await createClient();
+  const { data: atual } = await supabase
+    .from("chamados")
+    .select("responsavel, prioridade, prazo, diagnostico, solucao, horimetro")
+    .eq("id", input.chamadoId)
+    .eq("organization_id", ctx.orgId)
+    .maybeSingle();
+  if (!atual) return { ok: false, error: "Chamado não encontrado." };
+
+  const patch = {
+    responsavel: input.responsavel.trim() === "" ? null : input.responsavel.trim().slice(0, 120),
+    prioridade: input.prioridade === "" ? null : input.prioridade,
+    prazo: /^\d{4}-\d{2}-\d{2}$/.test(input.prazo) ? input.prazo : null,
+    diagnostico: input.diagnostico.trim() === "" ? null : input.diagnostico.trim().slice(0, 2000),
+    solucao: input.solucao.trim() === "" ? null : input.solucao.trim().slice(0, 2000),
+    horimetro: input.horimetro,
+  };
+
+  const { error } = await supabase
+    .from("chamados")
+    .update(patch)
+    .eq("id", input.chamadoId)
+    .eq("organization_id", ctx.orgId);
+  if (error) return { ok: false, error: "Não foi possível salvar." };
+
+  await registrarLog(supabase, {
+    tabela: "chamados",
+    registro_id: input.chamadoId,
+    acao: "UPDATE",
+    dados_anteriores: atual as unknown as Record<string, unknown>,
+    dados_novos: patch as unknown as Record<string, unknown>,
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
   });
   revalidarChamado(input.chamadoId);
   return { ok: true };

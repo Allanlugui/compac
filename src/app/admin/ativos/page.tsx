@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrg } from "@/lib/org";
 import type { Ativo } from "@/lib/types";
 import NovoAtivoForm from "./NovoAtivoForm";
 import AtivosGrid from "./AtivosGrid";
@@ -11,9 +12,11 @@ export const metadata: Metadata = {
 
 export default async function AdminAtivosPage() {
   const supabase = await createClient();
+  const ctx = await requireOrg();
   const { data } = await supabase
     .from("ativos")
     .select("id, nome, localizacao, qr_code_hash, created_at")
+    .eq("organization_id", ctx.orgId)
     .order("created_at", { ascending: false });
 
   const ativos = ((data ?? []) as Ativo[]).slice().sort(

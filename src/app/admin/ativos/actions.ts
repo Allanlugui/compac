@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrg } from "@/lib/org";
+import { exigirPapel } from "@/lib/roles";
 import { registrarLog } from "@/lib/auditoria";
 
 export type CriarAtivoResult =
@@ -40,12 +42,15 @@ export async function criarAtivo(input: {
   }
 
   const supabase = await createClient();
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
 
   for (let tentativa = 0; tentativa < 5; tentativa++) {
     const qr_code_hash = gerarHash(12);
     const { data, error } = await supabase
       .from("ativos")
       .insert({
+        organization_id: ctx.orgId,
         nome,
         localizacao: localizacao === "" ? null : localizacao,
         qr_code_hash,
@@ -60,7 +65,9 @@ export async function criarAtivo(input: {
         acao: "INSERT",
         dados_anteriores: null,
         dados_novos: { nome, localizacao, qr_code_hash },
-        executado_por: "admin",
+        executado_por: ctx.email,
+        organization_id: ctx.orgId,
+        user_id: ctx.userId,
       });
       revalidatePath("/admin/ativos");
       return { ok: true };

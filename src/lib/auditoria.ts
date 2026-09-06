@@ -8,6 +8,8 @@ export interface LogAuditoria {
   dados_anteriores: Record<string, unknown> | null;
   dados_novos: Record<string, unknown> | null;
   executado_por: string;
+  organization_id?: string;
+  user_id?: string;
 }
 
 /**

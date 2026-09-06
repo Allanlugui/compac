@@ -1,13 +1,13 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { registrarLog } from "@/lib/auditoria";
+import { createServiceClient } from "@/lib/supabase/service";
 
 export interface CriarChamadoInput {
   ativoId: string;
   solicitante: string;
   descricao: string;
-  /** URLs públicas das fotos já enviadas ao Storage. */
+  /** PATHS do Storage (`o/{org}/...`) gerados pelo upload server-side. */
   fotosAntes: string[];
 }
 
@@ -20,18 +20,16 @@ const MAX_DESCRICAO = 2000;
 const MAX_FOTOS = 6;
 
 /**
- * Registra um chamado aberto pelo formulário público do QR Code.
- * O upload das fotos é feito no navegador (Storage) e apenas as
- * URLs públicas chegam aqui para serem salvas em `fotos_antes`.
+ * Registra chamado público. Tenant NUNCA vem do cliente: é resolvido
+ * do ativo no servidor e cada foto é validada contra o prefixo da org.
+ * Insert via anon (RLS `chamados_insert_publico`); audit via service
+ * (anon não tem INSERT em auditoria).
  */
 export async function criarChamado(
   input: CriarChamadoInput,
 ): Promise<CriarChamadoResult> {
   const solicitante = input.solicitante.trim();
   const descricao = input.descricao.trim();
-  const fotosAntes = (Array.isArray(input.fotosAntes) ? input.fotosAntes : [])
-    .filter((url) => typeof url === "string" && url.startsWith("http"))
-    .slice(0, MAX_FOTOS);
 
   if (!input.ativoId) {
     return { ok: false, error: "Ativo inválido. Escaneie o QR Code novamente." };
@@ -46,22 +44,29 @@ export async function criarChamado(
     };
   }
 
-  const supabase = await createClient();
-
-  // Garante que o ativo realmente existe (o id veio do navegador).
-  const { data: ativo } = await supabase
+  const svc = createServiceClient();
+  const { data: ativo } = await svc
     .from("ativos")
-    .select("id")
+    .select("id, organization_id")
     .eq("id", input.ativoId)
     .maybeSingle();
 
-  if (!ativo) {
+  if (!ativo?.organization_id) {
     return { ok: false, error: "Ativo não encontrado." };
   }
+  const orgId = ativo.organization_id as string;
 
+  // Só aceita fotos dentro do prefixo da org do ativo (anti-forgery).
+  const prefixo = `o/${orgId}/chamados/${input.ativoId}/`;
+  const fotosAntes = (Array.isArray(input.fotosAntes) ? input.fotosAntes : [])
+    .filter((u) => typeof u === "string" && u.startsWith(prefixo))
+    .slice(0, MAX_FOTOS);
+
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("chamados")
     .insert({
+      organization_id: orgId,
       ativo_id: input.ativoId,
       solicitante,
       descricao,
@@ -78,13 +83,14 @@ export async function criarChamado(
   }
 
   const id = data.id as string;
-  await registrarLog(supabase, {
+  await svc.from("auditoria_logs").insert({
     tabela: "chamados",
     registro_id: id,
     acao: "INSERT",
     dados_anteriores: null,
     dados_novos: { ativo_id: input.ativoId, solicitante, fotos: fotosAntes.length },
     executado_por: solicitante,
+    organization_id: orgId,
   });
 
   return { ok: true, id };

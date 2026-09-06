@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Activity, Database, FileClock, ScrollText } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrg } from "@/lib/org";
 import type { AuditoriaLog } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import LogsAuditoria from "./LogsAuditoria";
@@ -35,10 +36,12 @@ async function checar(
 
 export default async function AuditoriaPage() {
   const supabase = await createClient();
+  const ctx = await requireOrg();
 
   const { data: logsData } = await supabase
     .from("auditoria_logs")
     .select("*")
+    .eq("organization_id", ctx.orgId)
     .order("created_at", { ascending: false })
     .limit(LIMITE_LOGS);
 
@@ -81,7 +84,7 @@ export default async function AuditoriaPage() {
   // ---------- KPIs ----------
   const agora = +new Date();
   const hojeISO = new Date().toISOString().slice(0, 10);
-  const porAcao = { INSERT: 0, UPDATE: 0, DELETE: 0 };
+  const porAcao: Record<string, number> = { INSERT: 0, UPDATE: 0, DELETE: 0 };
   let hoje = 0;
   let seteDias = 0;
   for (const log of logs) {

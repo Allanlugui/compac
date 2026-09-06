@@ -12,12 +12,14 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { uploadFotoQR } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { criarChamado } from "./actions";
 
 interface TicketFormProps {
   ativo: { id: string; nome: string; localizacao: string | null };
+  /** Token público da URL (usado no upload server-side). */
+  token: string;
 }
 
 interface FotoSelecionada {
@@ -27,17 +29,8 @@ interface FotoSelecionada {
 
 const MAX_FOTOS = 6;
 const MAX_BYTES_POR_FOTO = 8 * 1024 * 1024; // 8 MB
-const BUCKET = "manutencao-midia";
 
-function sanitizarNomeArquivo(nome: string): string {
-  return nome
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]/g, "_")
-    .slice(-60);
-}
-
-export default function TicketForm({ ativo }: TicketFormProps) {
+export default function TicketForm({ ativo, token }: TicketFormProps) {
   const [solicitante, setSolicitante] = useState("");
   const [descricao, setDescricao] = useState("");
   const [fotos, setFotos] = useState<FotoSelecionada[]>([]);
@@ -92,22 +85,14 @@ export default function TicketForm({ ativo }: TicketFormProps) {
     setErro(null);
 
     try {
-      // 1. Upload das fotos direto ao Supabase Storage (navegador → bucket).
-      const supabase = createClient();
-      const urls: string[] = [];
+      // 1. Upload via Server Action: path derivado do token no servidor.
+      const paths: string[] = [];
       for (let i = 0; i < fotos.length; i++) {
         const { file } = fotos[i];
         setFase(`Enviando foto ${i + 1} de ${fotos.length}…`);
-        const caminho = `chamados/${ativo.id}/${Date.now()}-${i + 1}-${sanitizarNomeArquivo(file.name)}`;
-        const { error: erroUpload } = await supabase.storage
-          .from(BUCKET)
-          .upload(caminho, file, {
-            contentType: file.type || "image/jpeg",
-            upsert: false,
-          });
-        if (erroUpload) throw new Error("Falha no envio das fotos.");
-        const { data } = supabase.storage.from(BUCKET).getPublicUrl(caminho);
-        urls.push(data.publicUrl);
+        const up = await uploadFotoQR(token, file);
+        if (!up.ok) throw new Error(up.error);
+        paths.push(up.path);
       }
 
       // 2. Registro do chamado via Server Action.
@@ -116,7 +101,7 @@ export default function TicketForm({ ativo }: TicketFormProps) {
         ativoId: ativo.id,
         solicitante,
         descricao,
-        fotosAntes: urls,
+        fotosAntes: paths,
       });
       if (!resultado.ok) throw new Error(resultado.error);
 

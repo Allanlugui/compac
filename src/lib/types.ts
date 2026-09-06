@@ -23,11 +23,19 @@ export interface Chamado {
   fotos_depois: string[];
   created_at: string;
   concluido_em: string | null;
+  /** O.S. completa (v3): execução operacional. */
+  responsavel: string | null;
+  prioridade: "baixa" | "media" | "alta" | "critica" | null;
+  prazo: string | null;
+  diagnostico: string | null;
+  solucao: string | null;
+  horimetro: number | null;
 }
 
 export interface Compra {
   id: string;
   chamado_id: string | null;
+  fornecedor_id: string | null;
   item: string;
   quantidade: number;
   valor_unitario: number;
@@ -68,7 +76,20 @@ export interface SolicitacaoCompra {
   updated_at: string;
 }
 
-export type AuditoriaAcao = "INSERT" | "UPDATE" | "DELETE";
+export type AuditoriaAcao =
+  | "INSERT"
+  | "UPDATE"
+  | "DELETE"
+  | "STATUS_CHANGE"
+  | "LOGIN"
+  | "LOGOUT"
+  | "APPROVAL"
+  | "REJECTION"
+  | "STOCK_ENTRY"
+  | "STOCK_EXIT"
+  | "STOCK_ADJUSTMENT"
+  | "MEMBERSHIP_CHANGE"
+  | "ROLE_CHANGE";
 
 export interface AuditoriaLog {
   id: string;
@@ -78,5 +99,110 @@ export interface AuditoriaLog {
   dados_anteriores: Record<string, unknown> | null;
   dados_novos: Record<string, unknown> | null;
   executado_por: string;
+  created_at: string;
+}
+
+/**
+ * SGA-M v3 (correção multi-tenant). Role pertence à MEMBERSHIP,
+ * nunca global ao usuário. Tipos espelham `schema_v4.sql`.
+ */
+
+export type Role =
+  | "ADMIN"
+  | "GESTOR"
+  | "TECNICO"
+  | "COMPRAS"
+  | "AUDITOR"
+  | "SOLICITANTE";
+
+export interface Organization {
+  id: string;
+  nome: string;
+  slug: string;
+  created_at: string;
+}
+
+export interface Membership {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  role: Role;
+  status: "ativo" | "inativo";
+  created_at: string;
+}
+
+export interface Fornecedor {
+  id: string;
+  organization_id: string;
+  nome: string;
+  cnpj: string | null;
+  contato: string | null;
+  telefone: string | null;
+  email: string | null;
+  endereco: string | null;
+  categoria: string | null;
+  avaliacao: number | null;
+  ativo: boolean;
+  created_at: string;
+}
+
+export interface Produto {
+  id: string;
+  organization_id: string;
+  codigo: string;
+  descricao: string;
+  categoria: string | null;
+  unidade: string;
+  estoque_atual: number;
+  estoque_minimo: number;
+  estoque_maximo: number | null;
+  localizacao: string | null;
+  fornecedor_id: string | null;
+  custo_medio: number;
+  ativo: boolean;
+  created_at: string;
+}
+
+export type TipoMovimentacao = "entrada" | "saida" | "ajuste" | "reserva" | "consumo";
+
+export interface Movimentacao {
+  id: string;
+  organization_id: string;
+  produto_id: string;
+  tipo: TipoMovimentacao;
+  quantidade: number;
+  custo_unitario: number;
+  chamado_id: string | null;
+  compra_id: string | null;
+  observacao: string | null;
+  executado_por: string;
+  created_at: string;
+}
+
+export interface ChecklistModelo {
+  id: string;
+  organization_id: string;
+  ativo_id: string | null;
+  titulo: string;
+  created_at: string;
+}
+
+export interface ChecklistItem {
+  id: string;
+  modelo_id: string;
+  texto: string;
+  obrigatorio: boolean;
+  ordem: number;
+}
+
+export interface Notificacao {
+  id: string;
+  organization_id: string;
+  user_id: string | null;
+  tipo: string;
+  titulo: string;
+  descricao: string | null;
+  link: string | null;
+  lida: boolean;
   created_at: string;
 }

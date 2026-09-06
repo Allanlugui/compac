@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Clock, Ticket, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrg } from "@/lib/org";
 import type { ChamadoStatus, Compra } from "@/lib/types";
 import {
   formatarData,
@@ -31,6 +32,7 @@ interface ChamadoRelatorio {
   status: ChamadoStatus;
   created_at: string;
   concluido_em: string | null;
+  prazo: string | null;
   ativos: { nome: string } | { nome: string }[] | null;
 }
 
@@ -79,12 +81,18 @@ export default async function RelatoriosPage({ searchParams }: RelatoriosProps) 
   if (fim < inicio) [inicio, fim] = [fim, inicio];
 
   const supabase = await createClient();
+  const ctx = await requireOrg();
   const [{ data: chamadosData }, { data: comprasData }] = await Promise.all([
     supabase
       .from("chamados")
-      .select("id, status, created_at, concluido_em, ativos(id, nome)")
+      .select("id, status, created_at, concluido_em, prazo, ativos(id, nome)")
+      .eq("organization_id", ctx.orgId)
       .order("created_at", { ascending: true }),
-    supabase.from("compras").select("*").order("data_compra", { ascending: true }),
+    supabase
+      .from("compras")
+      .select("*")
+      .eq("organization_id", ctx.orgId)
+      .order("data_compra", { ascending: true }),
   ]);
 
   const noPeriodo = (dataISO: string) => dataISO >= inicio && dataISO <= fim;
@@ -109,6 +117,15 @@ export default async function RelatoriosPage({ searchParams }: RelatoriosProps) 
     (soma, c) => soma + Number(c.valor_total ?? 0),
     0,
   );
+
+  // ---------- SLA e distribuição por status (dados reais) ----------
+  const porStatus = { aberto: 0, em_andamento: 0, concluido: 0 };
+  for (const c of chamados) porStatus[c.status] += 1;
+  const comPrazo = concluidos.filter((c) => c.prazo);
+  const noPrazo = comPrazo.filter(
+    (c) => (c.concluido_em as string).slice(0, 10) <= (c.prazo as string),
+  );
+  const sla = comPrazo.length > 0 ? Math.round((noPrazo.length / comPrazo.length) * 100) : NaN;
 
   // ---------- Evolução mensal dos gastos ----------
   const meses = mesesNoIntervalo(inicio, fim);
@@ -181,6 +198,20 @@ export default async function RelatoriosPage({ searchParams }: RelatoriosProps) 
       Icone: Wallet,
       classes: "bg-emerald-100 text-emerald-700",
     },
+    {
+      rotulo: "SLA (no prazo)",
+      valor: Number.isFinite(sla) ? `${sla}%` : "—",
+      detalhe: `base: ${comPrazo.length} com prazo`,
+      Icone: Clock,
+      classes: "bg-violet-100 text-violet-700",
+    },
+  ];
+
+  const totalStatus = porStatus.aberto + porStatus.em_andamento + porStatus.concluido;
+  const barraStatus = [
+    { rotulo: "Abertos", valor: porStatus.aberto, classes: "bg-amber-400" },
+    { rotulo: "Em andamento", valor: porStatus.em_andamento, classes: "bg-sky-500" },
+    { rotulo: "Concluídos", valor: porStatus.concluido, classes: "bg-emerald-500" },
   ];
 
   return (
@@ -200,7 +231,7 @@ export default async function RelatoriosPage({ searchParams }: RelatoriosProps) 
       <FiltrosPeriodo inicio={inicio} fim={fim} />
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {kpis.map(({ rotulo, valor, detalhe, Icone, classes }) => (
           <div
             key={rotulo}
@@ -227,6 +258,31 @@ export default async function RelatoriosPage({ searchParams }: RelatoriosProps) 
       </div>
 
       {/* Gráficos */}
+      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm break-inside-avoid print:shadow-none">
+        <h2 className="text-base font-bold text-zinc-900">O.S. por status</h2>
+        <p className="mt-0.5 text-sm text-zinc-500">Distribuição no período selecionado</p>
+        {totalStatus === 0 ? (
+          <p className="mt-3 text-sm text-zinc-500">Sem chamados no período.</p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            <div className="flex h-4 w-full overflow-hidden rounded-full bg-zinc-100">
+              {barraStatus.map((b) =>
+                b.valor > 0 ? (
+                  <span key={b.rotulo} style={{ width: `${(b.valor / totalStatus) * 100}%` }} className={b.classes} title={`${b.rotulo}: ${b.valor}`} />
+                ) : null,
+              )}
+            </div>
+            <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-600">
+              {barraStatus.map((b) => (
+                <li key={b.rotulo} className="flex items-center gap-1.5">
+                  <span className={`size-2.5 rounded-full ${b.classes}`} />
+                  {b.rotulo}: <strong className="tabular-nums">{b.valor}</strong>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
       <GraficosRelatorio
         gastosMes={gastosMes}
         gastosSetor={gastosSetor}

@@ -192,7 +192,7 @@ export default function TabelaCompras({ compras, vinculos }: TabelaComprasProps)
     setErro(null);
     setProcessando(id);
     try {
-      const resultado = await atualizarCompra({ id, ...dados, chamadoId: "" });
+      const resultado = await atualizarCompra({ id, ...dados, chamadoId: "", fornecedorId: "" });
       if (!resultado.ok) throw new Error(resultado.error);
       setEditId(null);
       router.refresh();

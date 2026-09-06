@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ClipboardCheck, Receipt, TrendingUp, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrg } from "@/lib/org";
 import type { ChamadoStatus, Compra, SolicitacaoCompra } from "@/lib/types";
 import { formatarMoeda, numeroOS } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -17,21 +18,31 @@ const STATUS_VINCULAVEIS: ChamadoStatus[] = ["aberto", "em_andamento"];
 
 export default async function ComprasPage() {
   const supabase = await createClient();
+  const ctx = await requireOrg();
 
-  const [{ data: comprasData }, { data: chamadosData }, { data: pedidosData }] =
+  const [{ data: comprasData }, { data: chamadosData }, { data: pedidosData }, { data: fornsData }] =
     await Promise.all([
       supabase
         .from("compras")
         .select("*")
+        .eq("organization_id", ctx.orgId)
         .order("data_compra", { ascending: false }),
       supabase
         .from("chamados")
         .select("id, status, ativos(id, nome)")
+        .eq("organization_id", ctx.orgId)
         .order("created_at", { ascending: false }),
       supabase
         .from("solicitacoes_compra")
         .select("*")
+        .eq("organization_id", ctx.orgId)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("fornecedores")
+        .select("id, nome")
+        .eq("organization_id", ctx.orgId)
+        .eq("ativo", true)
+        .order("nome", { ascending: true }),
     ]);
 
   const pedidos = ((pedidosData ?? []) as SolicitacaoCompra[]).slice().sort(
@@ -78,6 +89,10 @@ export default async function ComprasPage() {
       id: ch.id,
       rotulo: `${vinculos[ch.id]} (${ch.status === "aberto" ? "aberto" : "em andamento"})`,
     }));
+
+  const opcoesFornecedores = ((fornsData ?? []) as { id: string; nome: string }[]).map(
+    (f) => ({ id: f.id, rotulo: f.nome }),
+  );
 
   const kpis = [
     {
@@ -139,7 +154,7 @@ export default async function ComprasPage() {
         ))}
       </div>
 
-      <NovaCompraForm chamados={opcoesVinculo} />
+      <NovaCompraForm chamados={opcoesVinculo} fornecedores={opcoesFornecedores} />
       <PedidosCompra pedidos={pedidos} />
       <TabelaCompras compras={compras} vinculos={vinculos} />
     </div>

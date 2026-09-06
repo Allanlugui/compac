@@ -25,12 +25,32 @@ const CLASSE_ACAO: Record<AuditoriaAcao, string> = {
   INSERT: "bg-emerald-100 text-emerald-800 ring-emerald-200",
   UPDATE: "bg-sky-100 text-sky-800 ring-sky-200",
   DELETE: "bg-red-100 text-red-800 ring-red-200",
+  STATUS_CHANGE: "bg-amber-100 text-amber-800 ring-amber-200",
+  LOGIN: "bg-zinc-200 text-zinc-700 ring-zinc-300",
+  LOGOUT: "bg-zinc-200 text-zinc-700 ring-zinc-300",
+  APPROVAL: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+  REJECTION: "bg-red-100 text-red-800 ring-red-200",
+  STOCK_ENTRY: "bg-sky-100 text-sky-800 ring-sky-200",
+  STOCK_EXIT: "bg-amber-100 text-amber-800 ring-amber-200",
+  STOCK_ADJUSTMENT: "bg-violet-100 text-violet-800 ring-violet-200",
+  MEMBERSHIP_CHANGE: "bg-violet-100 text-violet-800 ring-violet-200",
+  ROLE_CHANGE: "bg-violet-100 text-violet-800 ring-violet-200",
 };
 
 const ROTULO_ACAO: Record<AuditoriaAcao, string> = {
   INSERT: "Criação",
   UPDATE: "Alteração",
   DELETE: "Exclusão",
+  STATUS_CHANGE: "Status",
+  LOGIN: "Login",
+  LOGOUT: "Logout",
+  APPROVAL: "Aprovação",
+  REJECTION: "Rejeição",
+  STOCK_ENTRY: "Entrada est.",
+  STOCK_EXIT: "Saída est.",
+  STOCK_ADJUSTMENT: "Ajuste est.",
+  MEMBERSHIP_CHANGE: "Membro",
+  ROLE_CHANGE: "Perfil",
 };
 
 /** Link contextual para o registro afetado, quando houver tela correspondente. */

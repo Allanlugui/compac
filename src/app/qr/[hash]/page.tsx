@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { SearchX } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import type { Ativo } from "@/lib/types";
 import TicketForm from "./TicketForm";
 
@@ -16,9 +16,11 @@ interface QrPageProps {
 
 export default async function QrPage({ params }: QrPageProps) {
   const { hash } = await params;
-  const supabase = await createClient();
+  // Lookup pública por token: service-side, colunas mínimas (escopo mínimo).
+  // Hashes legados de 12 chars seguem válidos (compatibilidade).
+  const svc = createServiceClient();
 
-  const { data } = await supabase
+  const { data } = await svc
     .from("ativos")
     .select("id, nome, localizacao")
     .eq("qr_code_hash", hash)
@@ -51,7 +53,7 @@ export default async function QrPage({ params }: QrPageProps) {
   return (
     <main className="min-h-dvh bg-zinc-100 px-4 py-6">
       <div className="mx-auto w-full max-w-md">
-        <TicketForm ativo={ativo} />
+        <TicketForm ativo={ativo} token={hash} />
         <p className="mt-4 text-center text-xs text-zinc-400">
           SGA-M · Gestão de Manutenção e Compras
         </p>
