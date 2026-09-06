@@ -16,6 +16,80 @@ export interface Ativo {
   categoria_id: string | null;
 }
 
+/** Status operacional do ativo (7 estados, schema_v7). */
+export type AtivoStatus =
+  | "operacional"
+  | "em_manutencao"
+  | "parado"
+  | "em_instalacao"
+  | "em_inspecao"
+  | "inativo"
+  | "desativado";
+
+/** Cadastro completo do ativo (FASE 2, espelha `schema_v7.sql`). */
+export interface AtivoCompleto extends Ativo {
+  codigo: string | null;
+  descricao: string | null;
+  numero_serie: string | null;
+  patrimonio: string | null;
+  tag: string | null;
+  fabricante: string | null;
+  modelo: string | null;
+  status: AtivoStatus;
+  criticidade: "baixa" | "media" | "alta" | "critica" | null;
+  prioridade_padrao: "baixa" | "media" | "alta" | "critica" | null;
+  centro_custo: string | null;
+  departamento: string | null;
+  responsavel: string | null;
+  equipe: string | null;
+  fornecedor_id: string | null;
+  nota_fiscal: string | null;
+  data_aquisicao: string | null;
+  valor_aquisicao: number | null;
+  data_instalacao: string | null;
+  garantia_ate: string | null;
+  vida_util_meses: number | null;
+  dados_tecnicos: Record<string, string>;
+  qr_impresso_em: string | null;
+  updated_at: string;
+}
+
+export interface AtivoStatusHistorico {
+  id: string;
+  organization_id: string;
+  ativo_id: string;
+  de: string | null;
+  para: string;
+  motivo: string | null;
+  user_id: string | null;
+  created_at: string;
+}
+
+export type CategoriaDocumento =
+  | "manual"
+  | "ficha_tecnica"
+  | "nota_fiscal"
+  | "certificado"
+  | "laudo"
+  | "garantia"
+  | "contrato"
+  | "desenho"
+  | "procedimento"
+  | "foto"
+  | "outro";
+
+export interface AtivoDocumento {
+  id: string;
+  organization_id: string;
+  ativo_id: string;
+  nome: string;
+  categoria: CategoriaDocumento;
+  path: string;
+  tamanho_bytes: number;
+  mime: string | null;
+  created_at: string;
+}
+
 /** Nível de impacto operacional da ocorrência (5 níveis, schema_v5). */
 export type ImpactoOperacional =
   | "baixo"

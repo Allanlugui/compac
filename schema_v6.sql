@@ -23,6 +23,11 @@ create table if not exists public.localidades (
 create index if not exists localidades_org_idx on public.localidades (organization_id);
 create index if not exists localidades_parent_idx on public.localidades (parent_id);
 
+-- Raízes (parent NULL) não são cobertas pela UNIQUE acima (NULL ≠ NULL):
+-- garante nome único por org no nível raiz.
+create unique index if not exists localidades_root_uniq
+  on public.localidades (organization_id, nome) where parent_id is null;
+
 comment on table public.localidades is
   'Hierarquia física da org (unidade→predio→bloco→andar→area→sala). Níveis opcionais.';
 

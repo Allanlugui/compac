@@ -1,22 +1,40 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { QRCodeSVG } from "qrcode.react";
 import { SearchX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import type { Ativo, AuditoriaLog, Chamado, Compra } from "@/lib/types";
+import { resolverFoto } from "@/lib/storage";
+import type {
+  AtivoCompleto,
+  AtributoCategoria,
+  AtivoDocumento,
+  AtivoStatusHistorico,
+  AuditoriaLog,
+  Chamado,
+  Compra,
+} from "@/lib/types";
 import { formatarDataHora, formatarMoeda, numeroOS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import PageHeader from "@/components/ui/PageHeader";
 import StatCard from "@/components/ui/StatCard";
 import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/app/admin/_components/StatusBadge";
+import AtivoStatusBadge from "@/app/admin/_components/AtivoStatusBadge";
 import ModeloManager from "./ModeloManager";
+import AtivoForm from "./AtivoForm";
+import DadosTecnicosForm from "./DadosTecnicosForm";
+import DocumentosManager, { type DocComUrl } from "./DocumentosManager";
+import StatusAtivoControl from "./StatusAtivoControl";
+import QrAtivoPanel from "./QrAtivoPanel";
 
 export const metadata: Metadata = { title: "Ativo · SGA-M" };
 
 const ABAS = [
   { id: "visao", rotulo: "Visão geral" },
+  { id: "dados", rotulo: "Dados" },
+  { id: "tecnicos", rotulo: "Técnicos" },
+  { id: "docs", rotulo: "Documentos" },
+  { id: "manutencao", rotulo: "Manutenção" },
   { id: "os", rotulo: "O.S." },
   { id: "custos", rotulo: "Custos" },
   { id: "checklists", rotulo: "Checklists" },
@@ -29,6 +47,20 @@ type AbaId = (typeof ABAS)[number]["id"];
 interface Props {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ tab?: string }>;
+}
+
+/** % de completude do cadastro (progressivo, sem bloquear operação). */
+function completude(a: AtivoCompleto, nDocs: number): { pct: number; itens: { rotulo: string; ok: boolean }[] } {
+  const itens = [
+    { rotulo: "Identificação", ok: !!(a.nome && a.codigo) },
+    { rotulo: "Localização", ok: !!(a.localidade_id || a.localizacao) },
+    { rotulo: "Classificação", ok: !!(a.criticidade && a.responsavel) },
+    { rotulo: "Técnicos", ok: Object.keys(a.dados_tecnicos ?? {}).length > 0 },
+    { rotulo: "Aquisição", ok: !!(a.fornecedor_id || a.nota_fiscal || a.data_aquisicao) },
+    { rotulo: "Documentos", ok: nDocs > 0 },
+  ];
+  const ok = itens.filter((i) => i.ok).length;
+  return { pct: Math.round((ok / itens.length) * 100), itens };
 }
 
 export default async function AtivoPage({ params, searchParams }: Props) {
@@ -45,7 +77,7 @@ export default async function AtivoPage({ params, searchParams }: Props) {
     .eq("id", id)
     .eq("organization_id", ctx.orgId)
     .maybeSingle();
-  const ativo = (ativoData ?? null) as Ativo | null;
+  const ativo = (ativoData ?? null) as AtivoCompleto | null;
 
   if (!ativo) {
     return (
@@ -56,7 +88,15 @@ export default async function AtivoPage({ params, searchParams }: Props) {
     );
   }
 
-  const [{ data: chamadosData }, { data: modelosData }] = await Promise.all([
+  const [
+    { data: chamadosData },
+    { data: modelosData },
+    { data: catsData },
+    { data: locsData },
+    { data: fornsData },
+    { data: docsData },
+    { data: histData },
+  ] = await Promise.all([
     supabase
       .from("chamados")
       .select("id, solicitante, descricao, status, created_at, concluido_em")
@@ -69,10 +109,51 @@ export default async function AtivoPage({ params, searchParams }: Props) {
       .eq("ativo_id", ativo.id)
       .eq("organization_id", ctx.orgId)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("categorias")
+      .select("id, nome, atributos")
+      .eq("organization_id", ctx.orgId)
+      .eq("tipo", "ativo")
+      .eq("ativa", true)
+      .order("nome"),
+    supabase
+      .from("localidades")
+      .select("id, nome, tipo")
+      .eq("organization_id", ctx.orgId)
+      .order("nome"),
+    supabase
+      .from("fornecedores")
+      .select("id, nome")
+      .eq("organization_id", ctx.orgId)
+      .order("nome"),
+    supabase
+      .from("ativo_documentos")
+      .select("*")
+      .eq("ativo_id", ativo.id)
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("ativo_status_historico")
+      .select("*")
+      .eq("ativo_id", ativo.id)
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: false })
+      .limit(30),
   ]);
 
   const chamados = (chamadosData ?? []) as Chamado[];
   const chamadosIds = chamados.map((c) => c.id);
+  const docs = (docsData ?? []) as AtivoDocumento[];
+  const historico = (histData ?? []) as AtivoStatusHistorico[];
+
+  const docsComUrl: DocComUrl[] = await Promise.all(
+    docs.map(async (d) => ({
+      ...d,
+      url: d.path.includes("/object/public/")
+        ? d.path
+        : await resolverFoto(d.path, ctx.orgId),
+    })),
+  );
 
   const [{ data: comprasData }, { data: logsData }] = await Promise.all([
     chamadosIds.length > 0
@@ -93,26 +174,35 @@ export default async function AtivoPage({ params, searchParams }: Props) {
   const logs = (logsData ?? []) as AuditoriaLog[];
   const totalCustos = compras.reduce((s, c) => s + Number(c.valor_total ?? 0), 0);
   const abertos = chamados.filter((c) => c.status !== "concluido").length;
+
+  const categoriaAtual = ((catsData ?? []) as { id: string; nome: string; atributos: AtributoCategoria[] }[]).find(
+    (c) => c.id === ativo.categoria_id,
+  );
+  const localidadeAtual = ((locsData ?? []) as { id: string; nome: string }[]).find(
+    (l) => l.id === ativo.localidade_id,
+  );
+  const comp = completude(ativo, docs.length);
+
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
   const qrUrl = `${siteUrl !== "" ? siteUrl : ""}/qr/${ativo.qr_code_hash}`;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        titulo={ativo.nome}
-        descricao={`${ativo.localizacao || "Sem localização"} · ${ctx.orgNome}`}
+        titulo={ativo.codigo ? `${ativo.codigo} · ${ativo.nome}` : ativo.nome}
+        descricao={`${localidadeAtual?.nome || ativo.localizacao || "Sem localização"} · ${ctx.orgNome}`}
         voltar={{ href: "/admin/ativos", rotulo: "Ativos" }}
-        acoes={<StatusBadge status={chamados.length > 0 && abertos === 0 ? "concluido" : abertos > 0 ? "em_andamento" : "aberto"} />}
+        acoes={<AtivoStatusBadge status={ativo.status} />}
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard rotulo="Cadastro" valor={`${comp.pct}%`} Icone={SearchX} tom={comp.pct >= 80 ? "emerald" : "amber"} />
         <StatCard rotulo="O.S. abertas" valor={abertos} Icone={SearchX} tom={abertos > 0 ? "amber" : "emerald"} />
-        <StatCard rotulo="Total de O.S." valor={chamados.length} Icone={SearchX} tom="zinc" />
         <StatCard rotulo="Custo total" valor={formatarMoeda(totalCustos)} Icone={SearchX} tom="sky" />
-        <StatCard rotulo="Checklists" valor={(modelosData ?? []).length} Icone={SearchX} tom="violet" />
+        <StatCard rotulo="Documentos" valor={docs.length} Icone={SearchX} tom="violet" />
       </div>
 
-      <nav aria-label="Abas do ativo" className="flex gap-1 overflow-x-auto rounded-2xl border border-zinc-200/70 bg-zinc-200/60 p-1.5">
+      <nav aria-label="Abas do ativo" className="no-scrollbar flex gap-1 overflow-x-auto rounded-2xl border border-zinc-200/70 bg-zinc-200/60 p-1.5">
         {ABAS.map(({ id: aid, rotulo }) => (
           <Link
             key={aid}
@@ -129,28 +219,91 @@ export default async function AtivoPage({ params, searchParams }: Props) {
       </nav>
 
       {aba === "visao" && (
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Localização</dt><dd className="font-semibold">{ativo.localizacao || "—"}</dd></div>
-            <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Cadastrado em</dt><dd className="font-semibold">{formatarDataHora(ativo.created_at)}</dd></div>
-            <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Código QR</dt><dd className="font-mono text-xs">{ativo.qr_code_hash}</dd></div>
-            <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Última conclusão</dt><dd className="font-semibold">{(() => { const cs = chamados.filter((c) => c.concluido_em).map((c) => c.concluido_em as string).sort(); return cs.length > 0 ? formatarDataHora(cs[cs.length - 1]) : "—"; })()}</dd></div>
-          </dl>
-          <h3 className="mt-5 text-sm font-black">Últimas O.S.</h3>
-          {chamados.length === 0 ? (
-            <p className="mt-2 text-sm text-zinc-500">Nenhum chamado para este ativo.</p>
-          ) : (
-            <ul className="mt-2 space-y-2">
-              {chamados.slice(0, 5).map((c) => (
-                <li key={c.id}>
-                  <Link href={`/admin/chamados/${c.id}`} className="flex items-center justify-between gap-2 rounded-xl bg-zinc-50 px-4 py-2.5 text-sm ring-1 ring-zinc-200/70 transition hover:bg-zinc-100">
-                    <span className="truncate font-semibold">OS {numeroOS(c.id)} · {c.solicitante}</span>
-                    <StatusBadge status={c.status} />
-                  </Link>
+        <section className="space-y-4">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black">Completude do cadastro · {comp.pct}%</h3>
+              <Link href={`/admin/ativos/${ativo.id}?tab=dados`} className="text-xs font-bold text-zinc-600 underline-offset-2 hover:underline">
+                Completar dados
+              </Link>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-100">
+              <div className="h-full rounded-full bg-zinc-900 transition-all" style={{ width: `${comp.pct}%` }} />
+            </div>
+            <ul className="mt-3 grid gap-1.5 text-sm sm:grid-cols-2">
+              {comp.itens.map((i) => (
+                <li key={i.rotulo} className="flex items-center gap-2">
+                  <span aria-hidden className={`flex size-5 items-center justify-center rounded-full text-[11px] font-black ${i.ok ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-400"}`}>
+                    {i.ok ? "✓" : "·"}
+                  </span>
+                  {i.rotulo}
                 </li>
               ))}
             </ul>
-          )}
+          </div>
+
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Status</dt><dd className="mt-0.5"><AtivoStatusBadge status={ativo.status} /></dd></div>
+              <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Categoria</dt><dd className="font-semibold">{categoriaAtual?.nome ?? "—"}</dd></div>
+              <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Localização</dt><dd className="font-semibold">{localidadeAtual?.nome ?? ativo.localizacao ?? "—"}</dd></div>
+              <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Responsável</dt><dd className="font-semibold">{ativo.responsavel || "—"}{ativo.equipe ? ` · ${ativo.equipe}` : ""}</dd></div>
+              <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Criticidade</dt><dd className="font-semibold">{ativo.criticidade ?? "—"}</dd></div>
+              <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Garantia até</dt><dd className="font-semibold">{ativo.garantia_ate ?? "—"}</dd></div>
+            </dl>
+            {ativo.descricao && (
+              <p className="mt-4 rounded-xl bg-zinc-50 p-3 text-sm whitespace-pre-wrap text-zinc-700 ring-1 ring-zinc-200/70">{ativo.descricao}</p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-black">Últimas O.S.</h3>
+            {chamados.length === 0 ? (
+              <p className="mt-2 text-sm text-zinc-500">Nenhum chamado para este ativo.</p>
+            ) : (
+              <ul className="mt-2 space-y-2">
+                {chamados.slice(0, 5).map((c) => (
+                  <li key={c.id}>
+                    <Link href={`/admin/chamados/${c.id}`} className="flex items-center justify-between gap-2 rounded-xl bg-zinc-50 px-4 py-2.5 text-sm ring-1 ring-zinc-200/70 transition hover:bg-zinc-100">
+                      <span className="truncate font-semibold">OS {numeroOS(c.id)} · {c.solicitante}</span>
+                      <StatusBadge status={c.status} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+      )}
+
+      {aba === "dados" && (
+        <AtivoForm
+          ativo={ativo}
+          categorias={(catsData ?? []) as { id: string; nome: string }[]}
+          localidades={(locsData ?? []) as { id: string; nome: string; tipo: string }[]}
+          fornecedores={(fornsData ?? []) as { id: string; nome: string }[]}
+        />
+      )}
+
+      {aba === "tecnicos" && (
+        <DadosTecnicosForm
+          ativoId={ativo.id}
+          categoriaNome={categoriaAtual?.nome ?? null}
+          atributos={categoriaAtual?.atributos ?? []}
+          valores={ativo.dados_tecnicos ?? {}}
+        />
+      )}
+
+      {aba === "docs" && (
+        <DocumentosManager ativoId={ativo.id} docs={docsComUrl} />
+      )}
+
+      {aba === "manutencao" && (
+        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <h3 className="text-sm font-black">Estado operacional</h3>
+          <div className="mt-3">
+            <StatusAtivoControl ativoId={ativo.id} statusAtual={ativo.status} historico={historico} />
+          </div>
         </section>
       )}
 
@@ -177,10 +330,13 @@ export default async function AtivoPage({ params, searchParams }: Props) {
       {aba === "custos" && (
         <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <p className="text-sm text-zinc-500">Total: <strong className="text-zinc-900">{formatarMoeda(totalCustos)}</strong> em {compras.length} itens.</p>
+          {ativo.valor_aquisicao !== null && (
+            <p className="mt-1 text-sm text-zinc-500">Aquisição: <strong className="text-zinc-900">{formatarMoeda(Number(ativo.valor_aquisicao))}</strong></p>
+          )}
           {compras.length === 0 ? (
             <p className="mt-3 text-sm text-zinc-500">Nenhum custo vinculado.</p>
           ) : (
-            <div className="mt-3 overflow-x-auto rounded-xl ring-1 ring-zinc-200">
+            <div className="no-scrollbar mt-3 overflow-x-auto rounded-xl ring-1 ring-zinc-200">
               <table className="w-full min-w-[520px] text-left text-sm">
                 <thead><tr className="bg-zinc-50 text-xs uppercase text-zinc-500"><th className="px-4 py-2">Item</th><th className="px-4 py-2">Qtd</th><th className="px-4 py-2">Total</th><th className="px-4 py-2">OS</th></tr></thead>
                 <tbody className="divide-y divide-zinc-100">
@@ -202,28 +358,49 @@ export default async function AtivoPage({ params, searchParams }: Props) {
       )}
 
       {aba === "auditoria" && (
-        logs.length === 0 ? (
-          <EmptyState Icone={SearchX} titulo="Sem eventos" descricao="Mutações deste ativo e de suas O.S. aparecem aqui." />
-        ) : (
-          <ul className="space-y-2">
-            {logs.map((l) => (
-              <li key={l.id} className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm shadow-sm">
-                <p><strong className="font-mono text-xs">{l.tabela}</strong> · <strong>{l.acao}</strong> · {l.executado_por}</p>
-                <p className="font-mono text-[11px] text-zinc-400">{l.registro_id.slice(0, 8)}… · {formatarDataHora(l.created_at)}</p>
-              </li>
-            ))}
-          </ul>
-        )
+        <div className="space-y-2">
+          {historico.length > 0 && (
+            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-black">Mudanças de status</h3>
+              <ul className="mt-2 space-y-1.5">
+                {historico.map((h) => (
+                  <li key={h.id} className="rounded-xl bg-zinc-50 px-3 py-2 text-sm ring-1 ring-zinc-200/70">
+                    <span className="font-bold">{h.de ?? "—"} → {h.para}</span>
+                    {h.motivo && <span className="text-zinc-600"> · {h.motivo}</span>}
+                    <span className="block text-xs text-zinc-400">{formatarDataHora(h.created_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {logs.length === 0 && historico.length === 0 ? (
+            <EmptyState Icone={SearchX} titulo="Sem eventos" descricao="Mutações deste ativo e de suas O.S. aparecem aqui." />
+          ) : (
+            <ul className="space-y-2">
+              {logs.map((l) => (
+                <li key={l.id} className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm shadow-sm">
+                  <p><strong className="font-mono text-xs">{l.tabela}</strong> · <strong>{l.acao}</strong> · {l.executado_por}</p>
+                  <p className="font-mono text-[11px] text-zinc-400">{l.registro_id.slice(0, 8)}… · {formatarDataHora(l.created_at)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {aba === "qr" && (
-        <section className="mx-auto max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 text-center shadow-sm">
-          <div className="mx-auto w-fit rounded-xl bg-white p-3 ring-1 ring-zinc-200">
-            <QRCodeSVG value={qrUrl} size={220} level="M" />
-          </div>
-          <p className="mt-3 font-mono text-xs break-all text-zinc-500">{qrUrl}</p>
-          <p className="mt-1 text-xs text-zinc-400">Imprima pela lista de ativos.</p>
-        </section>
+        <QrAtivoPanel
+          ativo={{
+            id: ativo.id,
+            nome: ativo.nome,
+            codigo: ativo.codigo,
+            localizacao: localidadeAtual?.nome || ativo.localizacao,
+            hash: ativo.qr_code_hash,
+            impressoEm: ativo.qr_impresso_em,
+          }}
+          url={qrUrl}
+          orgNome={ctx.orgNome}
+        />
       )}
     </div>
   );
