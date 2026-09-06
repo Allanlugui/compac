@@ -24,3 +24,20 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ETAPA 3 — Impressão da etiqueta do QR Code (somente a .print-label sai no papel). */
+@page {
+  size: auto;
+  margin: 12mm;
+}
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+
+  .print-label {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

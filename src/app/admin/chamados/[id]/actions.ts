@@ -1,0 +1,136 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import type { ChamadoStatus } from "@/lib/types";
+
+export type AcaoResult = { ok: true } | { ok: false; error: string };
+
+const STATUS_VALIDOS: ChamadoStatus[] = ["aberto", "em_andamento", "concluido"];
+const MAX_FOTOS_DEPOIS = 12;
+
+function revalidarChamado(chamadoId: string) {
+  revalidatePath(`/admin/chamados/${chamadoId}`);
+  revalidatePath(`/admin/chamados/${chamadoId}/os`);
+  revalidatePath("/admin/dashboard");
+}
+
+/** Transição de status. O trigger do banco preenche/limpa `concluido_em`. */
+export async function atualizarStatus(input: {
+  chamadoId: string;
+  status: ChamadoStatus;
+}): Promise<AcaoResult> {
+  if (!input.chamadoId) return { ok: false, error: "Chamado inválido." };
+  if (!STATUS_VALIDOS.includes(input.status)) {
+    return { ok: false, error: "Status inválido." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("chamados")
+    .update({ status: input.status })
+    .eq("id", input.chamadoId);
+
+  if (error) return { ok: false, error: "Não foi possível atualizar o status." };
+  revalidarChamado(input.chamadoId);
+  return { ok: true };
+}
+
+/** Anexa URLs públicas (já enviadas ao Storage) ao array `fotos_depois`. */
+export async function adicionarFotosDepois(input: {
+  chamadoId: string;
+  urls: string[];
+}): Promise<AcaoResult> {
+  if (!input.chamadoId) return { ok: false, error: "Chamado inválido." };
+  const novas = (Array.isArray(input.urls) ? input.urls : []).filter(
+    (u) => typeof u === "string" && u.startsWith("http"),
+  );
+  if (novas.length === 0) {
+    return { ok: false, error: "Nenhuma foto válida para anexar." };
+  }
+
+  const supabase = await createClient();
+  const { data, error: erroLeitura } = await supabase
+    .from("chamados")
+    .select("fotos_depois")
+    .eq("id", input.chamadoId)
+    .maybeSingle();
+
+  if (erroLeitura || !data) {
+    return { ok: false, error: "Chamado não encontrado." };
+  }
+
+  const atuais = Array.isArray(data.fotos_depois) ? data.fotos_depois : [];
+  const combinadas = [...atuais, ...novas].slice(0, MAX_FOTOS_DEPOIS);
+
+  const { error } = await supabase
+    .from("chamados")
+    .update({ fotos_depois: combinadas })
+    .eq("id", input.chamadoId);
+
+  if (error) return { ok: false, error: "Não foi possível salvar as fotos." };
+  revalidarChamado(input.chamadoId);
+  return { ok: true };
+}
+
+export interface RegistrarCompraInput {
+  chamadoId: string;
+  item: string;
+  quantidade: number;
+  valorUnitario: number;
+  setor: string;
+  dataCompra: string;
+}
+
+/** Registra insumo/compra vinculado ao chamado (`valor_total` calculado pelo banco). */
+export async function registrarCompra(
+  input: RegistrarCompraInput,
+): Promise<AcaoResult> {
+  const item = input.item.trim();
+  const setor = input.setor.trim();
+  const quantidade = Number(input.quantidade);
+  const valorUnitario = Number(input.valorUnitario);
+
+  if (!input.chamadoId) return { ok: false, error: "Chamado inválido." };
+  if (item.length < 2 || item.length > 160) {
+    return { ok: false, error: "Item: 2 a 160 caracteres." };
+  }
+  if (!Number.isFinite(quantidade) || quantidade <= 0 || quantidade > 1_000_000) {
+    return { ok: false, error: "Quantidade deve ser maior que zero." };
+  }
+  if (
+    !Number.isFinite(valorUnitario) ||
+    valorUnitario < 0 ||
+    valorUnitario > 100_000_000
+  ) {
+    return { ok: false, error: "Valor unitário inválido." };
+  }
+  if (setor.length > 80) {
+    return { ok: false, error: "Setor: máximo de 80 caracteres." };
+  }
+  const dataCompra = /^\d{4}-\d{2}-\d{2}$/.test(input.dataCompra)
+    ? input.dataCompra
+    : new Date().toISOString().slice(0, 10);
+
+  const supabase = await createClient();
+
+  const { data: chamado } = await supabase
+    .from("chamados")
+    .select("id")
+    .eq("id", input.chamadoId)
+    .maybeSingle();
+  if (!chamado) return { ok: false, error: "Chamado não encontrado." };
+
+  const { error } = await supabase.from("compras").insert({
+    chamado_id: input.chamadoId,
+    item,
+    quantidade,
+    valor_unitario: valorUnitario,
+    setor: setor === "" ? null : setor,
+    data_compra: dataCompra,
+  });
+
+  if (error) return { ok: false, error: "Não foi possível registrar a compra." };
+  revalidarChamado(input.chamadoId);
+  return { ok: true };
+}
