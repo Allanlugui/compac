@@ -22,6 +22,7 @@ export default function QrAtivoPanel({
   ativo,
   url,
   orgNome,
+  podeEditar,
 }: {
   ativo: {
     id: string;
@@ -33,6 +34,7 @@ export default function QrAtivoPanel({
   };
   url: string;
   orgNome: string;
+  podeEditar: boolean;
 }) {
   const router = useRouter();
   const [copiado, setCopiado] = useState(false);
@@ -137,6 +139,7 @@ export default function QrAtivoPanel({
           </a>
         </div>
 
+        {podeEditar && (
         <div className="mt-3 print:hidden">
           {!regen ? (
             <button
@@ -163,6 +166,7 @@ export default function QrAtivoPanel({
             </div>
           )}
         </div>
+        )}
         {erro && (
           <p role="alert" className="mt-2 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2 text-left text-sm font-medium text-red-700 ring-1 ring-red-200 print:hidden">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" />

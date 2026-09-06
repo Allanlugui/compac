@@ -35,6 +35,7 @@ const CLASSE_ACAO: Record<AuditoriaAcao, string> = {
   STOCK_ADJUSTMENT: "bg-violet-100 text-violet-800 ring-violet-200",
   MEMBERSHIP_CHANGE: "bg-violet-100 text-violet-800 ring-violet-200",
   ROLE_CHANGE: "bg-violet-100 text-violet-800 ring-violet-200",
+  QR_REGENERATED: "bg-orange-100 text-orange-800 ring-orange-200",
 };
 
 const ROTULO_ACAO: Record<AuditoriaAcao, string> = {
@@ -51,6 +52,7 @@ const ROTULO_ACAO: Record<AuditoriaAcao, string> = {
   STOCK_ADJUSTMENT: "Ajuste est.",
   MEMBERSHIP_CHANGE: "Membro",
   ROLE_CHANGE: "Perfil",
+  QR_REGENERATED: "QR novo",
 };
 
 /** Link contextual para o registro afetado, quando houver tela correspondente. */

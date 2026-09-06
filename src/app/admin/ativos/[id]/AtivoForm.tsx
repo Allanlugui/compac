@@ -29,11 +29,14 @@ export default function AtivoForm({
   categorias,
   localidades,
   fornecedores,
+  podeExcluir,
 }: {
   ativo: AtivoCompleto;
   categorias: Pick<Categoria, "id" | "nome">[];
   localidades: { id: string; nome: string; tipo: string }[];
   fornecedores: FornOpt[];
+  /** Exclusão física é SÓ ADMIN (com checagem de dependências). */
+  podeExcluir: boolean;
 }) {
   const router = useRouter();
   const [f, setF] = useState({
@@ -165,10 +168,12 @@ export default function AtivoForm({
           </button>
           {ok && <span className="text-xs font-bold text-emerald-700">Salvo!</span>}
           <span className="flex-1" />
-          <button type="button" onClick={excluir} disabled={excluindo || salvando} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-700 hover:bg-red-50 disabled:opacity-60">
-            <Trash2 className="size-4" />
-            {excluindo ? "Excluindo…" : "Excluir ativo"}
-          </button>
+          {podeExcluir && (
+            <button type="button" onClick={excluir} disabled={excluindo || salvando} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-700 hover:bg-red-50 disabled:opacity-60">
+              <Trash2 className="size-4" />
+              {excluindo ? "Excluindo…" : "Excluir ativo"}
+            </button>
+          )}
         </div>
         {erro && (
           <p role="alert" className="flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700 ring-1 ring-red-200">

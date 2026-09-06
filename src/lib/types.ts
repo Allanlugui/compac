@@ -176,7 +176,8 @@ export type AuditoriaAcao =
   | "STOCK_EXIT"
   | "STOCK_ADJUSTMENT"
   | "MEMBERSHIP_CHANGE"
-  | "ROLE_CHANGE";
+  | "ROLE_CHANGE"
+  | "QR_REGENERATED";
 
 export interface AuditoriaLog {
   id: string;

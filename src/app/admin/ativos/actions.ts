@@ -74,7 +74,7 @@ export async function criarAtivo(input: {
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "ativos.escrever");
+  exigirPermissao(ctx, "ativos.criar");
 
   // Vínculos resolvidos no servidor (pertencem à org?).
   let categoria_id: string | null = null;
@@ -183,7 +183,7 @@ export interface AtualizarAtivoInput {
 /** Cadastro COMPLETO (todas as seções; valida atributos da categoria). */
 export async function atualizarAtivo(input: AtualizarAtivoInput): Promise<AcaoResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "ativos.escrever");
+  exigirPermissao(ctx, "ativos.editar");
   if (!input.id) return { ok: false, error: "Ativo inválido." };
 
   const nome = input.nome.trim();
@@ -337,7 +337,7 @@ export async function salvarDadosTecnicos(input: {
   dados_tecnicos: Record<string, string>;
 }): Promise<AcaoResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "ativos.escrever");
+  exigirPermissao(ctx, "ativos.editar");
   if (!input.id) return { ok: false, error: "Ativo inválido." };
 
   const supabase = await createClient();
@@ -410,7 +410,7 @@ export async function atualizarStatusAtivo(input: {
   motivo?: string;
 }): Promise<AcaoResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "ativos.escrever");
+  exigirPermissao(ctx, "ativos.alterar_status");
   if (!input.id || !STATUS.includes(input.status)) {
     return { ok: false, error: "Status inválido." };
   }
@@ -455,22 +455,19 @@ export async function atualizarStatusAtivo(input: {
   return { ok: true };
 }
 
-/** Exclusão protegida: bloqueia se houver chamados (cascata apagaria O.S.). */
+/**
+ * Exclusão FÍSICA (SÓ ADMIN) — último recurso, nunca operação normal.
+ * Verifica TODAS as dependências; se houver qualquer uma, BLOQUEIA e
+ * orienta o arquivamento (`Inativo` → `Desativado`), que preserva o
+ * histórico para auditoria. Sem dependências não há órfãos: documentos
+ * são removidos do Storage antes das linhas.
+ */
 export async function excluirAtivo(input: { id: string }): Promise<AcaoResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "ativos.escrever");
+  exigirPermissao(ctx, "ativos.excluir");
   if (!input.id) return { ok: false, error: "Ativo inválido." };
 
   const supabase = await createClient();
-  const { count } = await supabase
-    .from("chamados")
-    .select("id", { count: "exact", head: true })
-    .eq("ativo_id", input.id)
-    .eq("organization_id", ctx.orgId);
-  if ((count ?? 0) > 0) {
-    return { ok: false, error: `Ativo possui ${count} chamado(s). Inative em vez de excluir.` };
-  }
-
   const { data: atual } = await supabase
     .from("ativos")
     .select("nome, codigo")
@@ -478,6 +475,41 @@ export async function excluirAtivo(input: { id: string }): Promise<AcaoResult> {
     .eq("organization_id", ctx.orgId)
     .maybeSingle();
   if (!atual) return { ok: false, error: "Ativo não encontrado." };
+
+  const BLOQUEIO =
+    "Este ativo possui histórico ou informações relacionadas. Recomendamos desativá-lo em vez de excluí-lo.";
+
+  const dependencias: string[] = [];
+  const contar = async (tabela: string, coluna: string): Promise<number> => {
+    const { count } = await supabase
+      .from(tabela)
+      .select("id", { count: "exact", head: true })
+      .eq(coluna, input.id)
+      .eq("organization_id", ctx.orgId);
+    return count ?? 0;
+  };
+
+  if ((await contar("chamados", "ativo_id")) > 0) dependencias.push("chamados/O.S.");
+  if ((await contar("ativo_status_historico", "ativo_id")) > 0) dependencias.push("histórico de status");
+  if ((await contar("ativo_documentos", "ativo_id")) > 0) dependencias.push("documentos/fotos");
+  if ((await contar("checklist_modelos", "ativo_id")) > 0) dependencias.push("checklists");
+
+  if (dependencias.length > 0) {
+    return { ok: false, error: `${BLOQUEIO} (${dependencias.join(", ")}.)` };
+  }
+
+  // Sem dependências: remove arquivos do Storage primeiro (anti-órfão),
+  // depois registros, depois o ativo.
+  const { data: docs } = await supabase
+    .from("ativo_documentos")
+    .select("path")
+    .eq("ativo_id", input.id)
+    .eq("organization_id", ctx.orgId);
+  const paths = ((docs ?? []) as { path: string }[]).map((d) => d.path).filter(Boolean);
+  if (paths.length > 0) {
+    const svc = createServiceClient();
+    await svc.storage.from("manutencao-midia").remove(paths);
+  }
 
   const { error } = await supabase
     .from("ativos")
@@ -548,7 +580,7 @@ export async function uploadArquivoAtivo(input: {
   nome?: string;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "ativos.escrever");
+  exigirPermissao(ctx, "ativos.editar");
   if (!input.ativoId) return { ok: false, error: "Ativo inválido." };
   if (!CATS_DOC.includes(input.categoria)) return { ok: false, error: "Categoria inválida." };
 
@@ -616,7 +648,7 @@ export async function uploadArquivoAtivo(input: {
 /** Exclui documento (arquivo + registro). */
 export async function excluirDocumento(input: { id: string }): Promise<AcaoResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "ativos.escrever");
+  exigirPermissao(ctx, "ativos.editar");
   if (!input.id) return { ok: false, error: "Documento inválido." };
 
   const supabase = await createClient();
@@ -659,7 +691,7 @@ export async function regenerarQR(input: { id: string }): Promise<
   { ok: true; hash: string } | { ok: false; error: string }
 > {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "ativos.escrever");
+  exigirPermissao(ctx, "ativos.editar");
   if (!input.id) return { ok: false, error: "Ativo inválido." };
 
   const supabase = await createClient();
@@ -682,7 +714,7 @@ export async function regenerarQR(input: { id: string }): Promise<
       await registrarLog(supabase, {
         tabela: "ativos",
         registro_id: input.id,
-        acao: "UPDATE",
+        acao: "QR_REGENERATED",
         dados_anteriores: { qr_code_hash: (atual as { qr_code_hash: string }).qr_code_hash },
         dados_novos: { qr_code_hash: hash, regenerado: true },
         executado_por: ctx.email,
@@ -700,7 +732,7 @@ export async function regenerarQR(input: { id: string }): Promise<
 /** Marca impressão da etiqueta (data da última impressão). */
 export async function marcarQrImpresso(input: { ids: string[] }): Promise<AcaoResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "ativos.escrever");
+  exigirPermissao(ctx, "ativos.editar");
   const ids = (Array.isArray(input.ids) ? input.ids : []).filter(
     (id) => typeof id === "string" && id.length >= 8,
   ).slice(0, 100);

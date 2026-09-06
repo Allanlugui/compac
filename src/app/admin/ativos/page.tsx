@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ShieldX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
+import { exigirPermissao, pode } from "@/lib/permissoes";
 import PageHeader from "@/components/ui/PageHeader";
 import NovoAtivoForm from "./NovoAtivoForm";
 import AtivosGrid, { type AtivoLista } from "./AtivosGrid";
@@ -30,7 +32,22 @@ export default async function AdminAtivosPage({ searchParams }: Props) {
   const termo = (q ?? "").trim().toLowerCase();
 
   const supabase = await createClient();
-  const ctx = await requireOrg();
+  let ctx: Awaited<ReturnType<typeof requireOrg>>;
+  try {
+    ctx = await requireOrg();
+    exigirPermissao(ctx, "ativos.ver");
+  } catch {
+    return (
+      <div className="space-y-6">
+        <PageHeader titulo="Ativos" descricao="Cadastro de ativos e QR Codes." />
+        <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
+          <ShieldX className="mx-auto size-10 text-zinc-300" />
+          <p className="mt-2 font-bold">Área restrita à operação (ADMIN, GESTOR, TÉCNICO)</p>
+        </div>
+      </div>
+    );
+  }
+  const podeCriar = pode(ctx, "ativos.criar");
 
   const [{ data: ativosData }, { data: cats }, { data: locs }] = await Promise.all([
     supabase
@@ -98,10 +115,12 @@ export default async function AdminAtivosPage({ searchParams }: Props) {
         />
       </div>
 
-      <NovoAtivoForm
-        categorias={(cats ?? []) as { id: string; nome: string }[]}
-        localidades={(locs ?? []) as { id: string; nome: string; tipo: string }[]}
-      />
+      {podeCriar && (
+        <NovoAtivoForm
+          categorias={(cats ?? []) as { id: string; nome: string }[]}
+          localidades={(locs ?? []) as { id: string; nome: string; tipo: string }[]}
+        />
+      )}
 
       <form method="get" className="grid gap-2 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5 print:hidden">
         <input name="q" defaultValue={q ?? ""} maxLength={60} placeholder="Buscar nome, código…" className={campo} />

@@ -23,10 +23,13 @@ export default function StatusAtivoControl({
   ativoId,
   statusAtual,
   historico,
+  podeAlterar,
 }: {
   ativoId: string;
   statusAtual: AtivoStatus;
   historico: AtivoStatusHistorico[];
+  /** Sem a permissão, exibe só o histórico (append-only, leitura). */
+  podeAlterar: boolean;
 }) {
   const router = useRouter();
   const [status, setStatus] = useState<AtivoStatus>(statusAtual);
@@ -36,7 +39,7 @@ export default function StatusAtivoControl({
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
-    if (salvando || status === statusAtual) return;
+    if (salvando || status === statusAtual || !podeAlterar) return;
     setErro(null);
     setSalvando(true);
     try {
@@ -61,13 +64,13 @@ export default function StatusAtivoControl({
         <AtivoStatusBadge status={statusAtual} />
       </div>
       <form onSubmit={salvar} className="grid gap-2 sm:grid-cols-3">
-        <select value={status} onChange={(e) => setStatus(e.target.value as AtivoStatus)} disabled={salvando} className={campo} aria-label="Novo status">
+        <select value={status} onChange={(e) => setStatus(e.target.value as AtivoStatus)} disabled={salvando || !podeAlterar} className={campo} aria-label="Novo status">
           {STATUS.map((s) => (
             <option key={s.id} value={s.id}>{s.rotulo}</option>
           ))}
         </select>
-        <input value={motivo} onChange={(e) => setMotivo(e.target.value)} disabled={salvando} maxLength={300} placeholder="Motivo (opcional)" className={campo} />
-        <button type="submit" disabled={salvando || status === statusAtual} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-4 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
+        <input value={motivo} onChange={(e) => setMotivo(e.target.value)} disabled={salvando || !podeAlterar} maxLength={300} placeholder="Motivo (opcional)" className={campo} />
+        <button type="submit" disabled={salvando || status === statusAtual || !podeAlterar} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-4 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
           {salvando && <LoaderCircle className="size-4 animate-spin" />}
           Alterar status
         </button>

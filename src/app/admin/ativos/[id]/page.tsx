@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SearchX } from "lucide-react";
+import { SearchX, ShieldX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
+import { exigirPermissao, pode } from "@/lib/permissoes";
 import { resolverFoto } from "@/lib/storage";
 import type {
   AtivoCompleto,
@@ -69,7 +70,24 @@ export default async function AtivoPage({ params, searchParams }: Props) {
   const aba: AbaId = ABAS.some((a) => a.id === tab) ? (tab as AbaId) : "visao";
 
   const supabase = await createClient();
-  const ctx = await requireOrg();
+  let ctx: Awaited<ReturnType<typeof requireOrg>>;
+  try {
+    ctx = await requireOrg();
+    exigirPermissao(ctx, "ativos.ver");
+  } catch {
+    return (
+      <div className="space-y-6">
+        <PageHeader titulo="Ativo" voltar={{ href: "/admin/ativos", rotulo: "Ativos" }} />
+        <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
+          <ShieldX className="mx-auto size-10 text-zinc-300" />
+          <p className="mt-2 font-bold">Área restrita à operação (ADMIN, GESTOR, TÉCNICO)</p>
+        </div>
+      </div>
+    );
+  }
+  const podeEditar = pode(ctx, "ativos.editar");
+  const podeAlterarStatus = pode(ctx, "ativos.alterar_status");
+  const podeExcluir = pode(ctx, "ativos.excluir");
 
   const { data: ativoData } = await supabase
     .from("ativos")
@@ -277,32 +295,80 @@ export default async function AtivoPage({ params, searchParams }: Props) {
       )}
 
       {aba === "dados" && (
-        <AtivoForm
-          ativo={ativo}
-          categorias={(catsData ?? []) as { id: string; nome: string }[]}
-          localidades={(locsData ?? []) as { id: string; nome: string; tipo: string }[]}
-          fornecedores={(fornsData ?? []) as { id: string; nome: string }[]}
-        />
+        podeEditar ? (
+          <AtivoForm
+            ativo={ativo}
+            categorias={(catsData ?? []) as { id: string; nome: string }[]}
+            localidades={(locsData ?? []) as { id: string; nome: string; tipo: string }[]}
+            fornecedores={(fornsData ?? []) as { id: string; nome: string }[]}
+            podeExcluir={podeExcluir}
+          />
+        ) : (
+          <p className="rounded-2xl border border-zinc-200 bg-white p-5 text-sm text-zinc-500 shadow-sm">
+            Edição restrita a ADMIN e GESTOR. Você pode visualizar e alterar o status na aba Manutenção.
+          </p>
+        )
       )}
 
       {aba === "tecnicos" && (
-        <DadosTecnicosForm
-          ativoId={ativo.id}
-          categoriaNome={categoriaAtual?.nome ?? null}
-          atributos={categoriaAtual?.atributos ?? []}
-          valores={ativo.dados_tecnicos ?? {}}
-        />
+        podeEditar ? (
+          <DadosTecnicosForm
+            ativoId={ativo.id}
+            categoriaNome={categoriaAtual?.nome ?? null}
+            atributos={categoriaAtual?.atributos ?? []}
+            valores={ativo.dados_tecnicos ?? {}}
+          />
+        ) : (
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 text-sm shadow-sm">
+            <dl className="grid gap-2 sm:grid-cols-2">
+              {Object.entries(ativo.dados_tecnicos ?? {}).map(([k, v]) => (
+                <div key={k} className="rounded-xl bg-zinc-50 px-3 py-2 ring-1 ring-zinc-200/70">
+                  <dt className="text-xs font-bold text-zinc-500">{k}</dt>
+                  <dd className="font-semibold">{v}</dd>
+                </div>
+              ))}
+              {Object.keys(ativo.dados_tecnicos ?? {}).length === 0 && (
+                <p className="text-zinc-500">Sem dados técnicos registrados.</p>
+              )}
+            </dl>
+          </div>
+        )
       )}
 
       {aba === "docs" && (
-        <DocumentosManager ativoId={ativo.id} docs={docsComUrl} />
+        podeEditar ? (
+          <DocumentosManager ativoId={ativo.id} docs={docsComUrl} />
+        ) : (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {docsComUrl.map((d) => (
+              <li key={d.id} className="rounded-2xl border border-zinc-200 bg-white p-3 text-sm shadow-sm">
+                <p className="truncate font-bold">{d.nome}</p>
+                {d.url !== "" && (
+                  <a href={d.url} target="_blank" rel="noreferrer" className="text-xs font-bold text-zinc-700 underline-offset-2 hover:underline">
+                    Abrir original
+                  </a>
+                )}
+              </li>
+            ))}
+            {docsComUrl.length === 0 && (
+              <li className="rounded-2xl border border-zinc-200 bg-white p-5 text-sm text-zinc-500 shadow-sm">
+                Nenhum documento.
+              </li>
+            )}
+          </ul>
+        )
       )}
 
       {aba === "manutencao" && (
         <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <h3 className="text-sm font-black">Estado operacional</h3>
           <div className="mt-3">
-            <StatusAtivoControl ativoId={ativo.id} statusAtual={ativo.status} historico={historico} />
+            <StatusAtivoControl
+              ativoId={ativo.id}
+              statusAtual={ativo.status}
+              historico={historico}
+              podeAlterar={podeAlterarStatus}
+            />
           </div>
         </section>
       )}
@@ -400,6 +466,7 @@ export default async function AtivoPage({ params, searchParams }: Props) {
           }}
           url={qrUrl}
           orgNome={ctx.orgNome}
+          podeEditar={podeEditar}
         />
       )}
     </div>
