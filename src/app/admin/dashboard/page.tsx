@@ -11,10 +11,11 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import type { ChamadoStatus } from "@/lib/types";
+import type { ChamadoStatus, ImpactoOperacional } from "@/lib/types";
 import { formatarDataHora } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import StatusBadge from "@/app/admin/_components/StatusBadge";
+import ImpactoBadge, { IMPACTOS } from "@/app/admin/_components/ImpactoBadge";
 import PageHeader from "@/components/ui/PageHeader";
 import StatCard, { type Tom } from "@/components/ui/StatCard";
 import EmptyState from "@/components/ui/EmptyState";
@@ -43,7 +44,7 @@ const ACENTO_STATUS: Record<ChamadoStatus, string> = {
 };
 
 interface DashboardProps {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; impacto?: string }>;
 }
 
 /** Linha resumida do dashboard (subset do SELECT + join com ativos). */
@@ -52,6 +53,7 @@ interface ChamadoResumo {
   solicitante: string;
   descricao: string;
   status: ChamadoStatus;
+  impacto: ImpactoOperacional | null;
   created_at: string;
   ativos: { nome: string } | { nome: string }[] | null;
 }
@@ -64,17 +66,25 @@ function nomeDoAtivo(ativos: ChamadoResumo["ativos"]): string {
 }
 
 export default async function DashboardPage({ searchParams }: DashboardProps) {
-  const { status } = await searchParams;
+  const { status, impacto } = await searchParams;
   const aba: AbaId =
     status === "aberto" || status === "em_andamento" || status === "concluido"
       ? status
       : "todos";
+  const filtroImpacto: ImpactoOperacional | null =
+    impacto === "baixo" ||
+    impacto === "medio" ||
+    impacto === "alto" ||
+    impacto === "critico" ||
+    impacto === "parada_total"
+      ? impacto
+      : null;
 
   const supabase = await createClient();
   const ctx = await requireOrg();
   const { data } = await supabase
     .from("chamados")
-    .select("id, solicitante, descricao, status, created_at, ativo_id, ativos(id, nome, localizacao)")
+    .select("id, solicitante, descricao, status, impacto, created_at, ativo_id, ativos(id, nome, localizacao)")
     .eq("organization_id", ctx.orgId)
     .order("created_at", { ascending: false });
 
@@ -89,8 +99,19 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
     if (STATUS_VALIDOS.includes(c.status)) contagem[c.status] += 1;
   }
 
-  const visiveis =
-    aba === "todos" ? chamados : chamados.filter((c) => c.status === aba);
+  const visiveis = chamados.filter(
+    (c) =>
+      (aba === "todos" || c.status === aba) &&
+      (!filtroImpacto || c.impacto === filtroImpacto),
+  );
+
+  function hrefComFiltros(proxStatus: string, proxImpacto: ImpactoOperacional | null) {
+    const p = new URLSearchParams();
+    if (proxStatus !== "todos") p.set("status", proxStatus);
+    if (proxImpacto) p.set("impacto", proxImpacto);
+    const q = p.toString();
+    return q === "" ? "/admin/dashboard" : `/admin/dashboard?${q}`;
+  }
 
   const kpis: { rotulo: string; valor: number; Icone: (p: { className?: string }) => React.ReactNode; tom: Tom }[] = [
     { rotulo: "Abertos", valor: contagem.aberto, Icone: Ticket, tom: "amber" },
@@ -126,13 +147,13 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
         {ABAS.map(({ id, rotulo }) => {
           const total =
             id === "todos"
-              ? chamados.length
+              ? chamados.filter((c) => !filtroImpacto || c.impacto === filtroImpacto).length
               : contagem[id as ChamadoStatus];
           const ativo = aba === id;
           return (
             <Link
               key={id}
-              href={id === "todos" ? "/admin/dashboard" : `/admin/dashboard?status=${id}`}
+              href={hrefComFiltros(id, filtroImpacto)}
               aria-current={ativo ? "page" : undefined}
               className={cn(
                 "flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-bold whitespace-nowrap transition-all",
@@ -154,6 +175,43 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
           );
         })}
       </nav>
+
+      {/* Filtro por impacto operacional */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+          Impacto:
+        </span>
+        <Link
+          href={hrefComFiltros(aba, null)}
+          aria-current={!filtroImpacto ? "page" : undefined}
+          className={cn(
+            "rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition",
+            !filtroImpacto
+              ? "bg-zinc-900 text-white ring-zinc-900"
+              : "bg-white text-zinc-600 ring-zinc-300 hover:bg-zinc-100",
+          )}
+        >
+          Todos
+        </Link>
+        {IMPACTOS.map(({ id, rotulo }) => {
+          const ativo = filtroImpacto === id;
+          return (
+            <Link
+              key={id}
+              href={hrefComFiltros(aba, ativo ? null : id)}
+              aria-current={ativo ? "page" : undefined}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition",
+                ativo
+                  ? "bg-zinc-900 text-white ring-zinc-900"
+                  : "bg-white text-zinc-600 ring-zinc-300 hover:bg-zinc-100",
+              )}
+            >
+              {rotulo}
+            </Link>
+          );
+        })}
+      </div>
 
       {/* Lista de chamados */}
       {visiveis.length === 0 ? (
@@ -190,7 +248,10 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
                     {formatarDataHora(chamado.created_at)}
                   </p>
                 </div>
-                <StatusBadge status={chamado.status} />
+                <div className="flex flex-col items-end gap-1.5">
+                  <StatusBadge status={chamado.status} />
+                  <ImpactoBadge impacto={chamado.impacto} />
+                </div>
               </div>
               <p className="mt-3 line-clamp-2 pl-2 text-sm text-zinc-600">
                 {chamado.descricao}

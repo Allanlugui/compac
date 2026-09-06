@@ -13,6 +13,14 @@ export interface Ativo {
   created_at: string;
 }
 
+/** Nível de impacto operacional da ocorrência (5 níveis, schema_v5). */
+export type ImpactoOperacional =
+  | "baixo"
+  | "medio"
+  | "alto"
+  | "critico"
+  | "parada_total";
+
 export interface Chamado {
   id: string;
   ativo_id: string;
@@ -30,6 +38,8 @@ export interface Chamado {
   diagnostico: string | null;
   solucao: string | null;
   horimetro: number | null;
+  /** Impacto operacional (schema_v5, nullable p/ chamados legados). */
+  impacto: ImpactoOperacional | null;
 }
 
 export interface Compra {
@@ -128,6 +138,9 @@ export interface Membership {
   user_id: string;
   role: Role;
   status: "ativo" | "inativo";
+  /** Setor/departamento POR VÍNCULO (schema_v5, nullable). */
+  setor: string | null;
+  departamento: string | null;
   created_at: string;
 }
 

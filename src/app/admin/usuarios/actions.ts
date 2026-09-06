@@ -16,16 +16,25 @@ export type UsuarioResult =
 
 const ROLES: Role[] = ["ADMIN", "GESTOR", "TECNICO", "COMPRAS", "AUDITOR", "SOLICITANTE"];
 
+function normalizarSetor(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().slice(0, 80);
+  return t === "" ? null : t;
+}
+
 /**
  * Cadastra membro com SENHA PROVISÓRIA de uso único (ADMIN).
  * Fluxo: gera senha → createUser confirmado + flag must_change_password →
- * profile + membership → e-mail com a senha (SMTP próprio) → audita.
+ * profile + membership (com setor/departamento) → e-mail com a senha
+ * (SMTP próprio) → audita.
  * Sem SMTP, a senha retorna para exibição única ao admin.
  */
 export async function convidarMembro(input: {
   email: string;
   nome: string;
   role: Role;
+  setor?: string;
+  departamento?: string;
 }): Promise<UsuarioResult> {
   const ctx = await requireOrg();
   exigirPapel(ctx, ["ADMIN"]);
@@ -86,6 +95,8 @@ export async function convidarMembro(input: {
     user_id: data.user.id,
     role: input.role,
     status: "ativo",
+    setor: normalizarSetor(input.setor),
+    departamento: normalizarSetor(input.departamento),
   });
 
   const envio = await enviarSenhaProvisoria({
@@ -101,7 +112,15 @@ export async function convidarMembro(input: {
     registro_id: data.user.id,
     acao: "MEMBERSHIP_CHANGE",
     dados_anteriores: null,
-    dados_novos: { email, nome, role: input.role, organization_id: ctx.orgId, email_enviado: envio.enviado },
+    dados_novos: {
+      email,
+      nome,
+      role: input.role,
+      organization_id: ctx.orgId,
+      setor: normalizarSetor(input.setor),
+      departamento: normalizarSetor(input.departamento),
+      email_enviado: envio.enviado,
+    },
     executado_por: ctx.email,
   });
 
@@ -177,6 +196,135 @@ export async function alternarStatusMembro(input: {
     acao: "MEMBERSHIP_CHANGE",
     dados_anteriores: null,
     dados_novos: { status: input.status },
+    executado_por: ctx.email,
+  });
+
+  revalidatePath("/admin/usuarios");
+  return { ok: true };
+}
+
+/**
+ * Edita membro do vínculo (ADMIN). Nome vai ao profile (global);
+ * role/setor/departamento vão à membership (por org).
+ * Role própria nunca muda aqui (anti-lockout); setor/departamento/nome sim.
+ */
+export async function editarMembro(input: {
+  userId: string;
+  nome: string;
+  role: Role;
+  setor?: string;
+  departamento?: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN"]);
+  if (!input.userId) return { ok: false, error: "Membro inválido." };
+
+  const nome = input.nome.trim().slice(0, 120);
+  if (nome.length < 2) return { ok: false, error: "Nome: mínimo 2 caracteres." };
+  if (!ROLES.includes(input.role)) {
+    return { ok: false, error: "Perfil inválido." };
+  }
+  if (input.userId === ctx.userId && input.role) {
+    // Trava: verifica se tentou rebaixar a si mesmo.
+    const supabase0 = await createClient();
+    const { data: propria } = await supabase0
+      .from("memberships")
+      .select("role")
+      .eq("organization_id", ctx.orgId)
+      .eq("user_id", ctx.userId)
+      .maybeSingle();
+    if (propria && (propria as { role: string }).role !== input.role) {
+      return { ok: false, error: "Você não pode alterar seu próprio perfil." };
+    }
+  }
+
+  const setor = normalizarSetor(input.setor);
+  const departamento = normalizarSetor(input.departamento);
+
+  const svc = createServiceClient();
+  const { error: erroProfile } = await svc
+    .from("profiles")
+    .update({ nome })
+    .eq("id", input.userId);
+  if (erroProfile) return { ok: false, error: "Não foi possível salvar o nome." };
+
+  const supabase = await createClient();
+  const { data: atual } = await supabase
+    .from("memberships")
+    .select("role, setor, departamento")
+    .eq("organization_id", ctx.orgId)
+    .eq("user_id", input.userId)
+    .maybeSingle();
+  if (!atual) return { ok: false, error: "Membro não encontrado nesta organização." };
+
+  const { error } = await supabase
+    .from("memberships")
+    .update({ role: input.role, setor, departamento })
+    .eq("organization_id", ctx.orgId)
+    .eq("user_id", input.userId);
+  if (error) return { ok: false, error: "Não foi possível salvar o vínculo." };
+
+  await registrarLog(supabase, {
+    tabela: "memberships",
+    registro_id: input.userId,
+    acao: "MEMBERSHIP_CHANGE",
+    dados_anteriores: atual as unknown as Record<string, unknown>,
+    dados_novos: { nome, role: input.role, setor, departamento },
+    executado_por: ctx.email,
+  });
+
+  revalidatePath("/admin/usuarios");
+  return { ok: true };
+}
+
+/**
+ * Remove o VÍNCULO do membro com a org (ADMIN; nunca a si mesmo;
+ * nunca o último ADMIN ativo). Preserva login, profile e histórico.
+ */
+export async function removerMembro(input: {
+  userId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN"]);
+  if (!input.userId || input.userId === ctx.userId) {
+    return { ok: false, error: "Operação inválida para este usuário." };
+  }
+
+  const supabase = await createClient();
+  const { data: alvo } = await supabase
+    .from("memberships")
+    .select("role, status")
+    .eq("organization_id", ctx.orgId)
+    .eq("user_id", input.userId)
+    .maybeSingle();
+  if (!alvo) return { ok: false, error: "Membro não encontrado." };
+
+  if ((alvo as { role: string }).role === "ADMIN") {
+    const { count } = await supabase
+      .from("memberships")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", ctx.orgId)
+      .eq("role", "ADMIN")
+      .eq("status", "ativo")
+      .neq("user_id", input.userId);
+    if (!count || count < 1) {
+      return { ok: false, error: "Não é possível remover o último ADMIN ativo." };
+    }
+  }
+
+  const { error } = await supabase
+    .from("memberships")
+    .delete()
+    .eq("organization_id", ctx.orgId)
+    .eq("user_id", input.userId);
+  if (error) return { ok: false, error: "Não foi possível remover o membro." };
+
+  await registrarLog(supabase, {
+    tabela: "memberships",
+    registro_id: input.userId,
+    acao: "MEMBERSHIP_CHANGE",
+    dados_anteriores: alvo as unknown as Record<string, unknown>,
+    dados_novos: { removido: true, organization_id: ctx.orgId },
     executado_por: ctx.email,
   });
 

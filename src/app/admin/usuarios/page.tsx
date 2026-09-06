@@ -29,7 +29,7 @@ export default async function UsuariosPage() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("memberships")
-    .select("user_id, role, status, profiles!inner(nome)")
+    .select("user_id, role, status, setor, departamento, profiles!inner(nome)")
     .eq("organization_id", ctx.orgId)
     .order("created_at", { ascending: true });
 
@@ -37,11 +37,15 @@ export default async function UsuariosPage() {
     user_id: string;
     role: Role;
     status: "ativo" | "inativo";
+    setor: string | null;
+    departamento: string | null;
     profiles: { nome: string | null };
   }[]).map((m) => ({
     user_id: m.user_id,
     role: m.role,
     status: m.status,
+    setor: m.setor,
+    departamento: m.departamento,
     nome: m.profiles?.nome ?? "—",
   }));
 

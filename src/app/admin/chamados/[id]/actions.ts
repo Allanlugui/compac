@@ -6,11 +6,18 @@ import { requireOrg } from "@/lib/org";
 import { exigirPapel } from "@/lib/roles";
 import { registrarLog } from "@/lib/auditoria";
 import { notificar } from "@/app/admin/notificacoes/actions";
-import type { ChamadoStatus } from "@/lib/types";
+import type { ChamadoStatus, ImpactoOperacional } from "@/lib/types";
 
 export type AcaoResult = { ok: true } | { ok: false; error: string };
 
 const STATUS_VALIDOS: ChamadoStatus[] = ["aberto", "em_andamento", "concluido"];
+const IMPACTOS_VALIDOS: ImpactoOperacional[] = [
+  "baixo",
+  "medio",
+  "alto",
+  "critico",
+  "parada_total",
+];
 const MAX_FOTOS_DEPOIS = 12;
 
 function revalidarChamado(chamadoId: string) {
@@ -65,6 +72,49 @@ export async function atualizarStatus(input: {
     descricao: `Chamado atualizado por ${ctx.email}.`,
     link: `/admin/chamados/${input.chamadoId}`,
     orgId: ctx.orgId,
+  });
+  revalidarChamado(input.chamadoId);
+  return { ok: true };
+}
+
+/** Define o nível de impacto operacional da ocorrência. */
+export async function atualizarImpacto(input: {
+  chamadoId: string;
+  impacto: ImpactoOperacional | null;
+}): Promise<AcaoResult> {
+  if (!input.chamadoId) return { ok: false, error: "Chamado inválido." };
+  if (input.impacto !== null && !IMPACTOS_VALIDOS.includes(input.impacto)) {
+    return { ok: false, error: "Impacto inválido." };
+  }
+
+  const supabase = await createClient();
+  const ctx = await requireOrg();
+  exigirPapel(ctx, ["ADMIN", "GESTOR", "TECNICO"]);
+
+  const { data: atual } = await supabase
+    .from("chamados")
+    .select("impacto")
+    .eq("id", input.chamadoId)
+    .eq("organization_id", ctx.orgId)
+    .maybeSingle();
+  if (!atual) return { ok: false, error: "Chamado não encontrado." };
+
+  const { error } = await supabase
+    .from("chamados")
+    .update({ impacto: input.impacto })
+    .eq("id", input.chamadoId)
+    .eq("organization_id", ctx.orgId);
+  if (error) return { ok: false, error: "Não foi possível salvar o impacto." };
+
+  await registrarLog(supabase, {
+    tabela: "chamados",
+    registro_id: input.chamadoId,
+    acao: "UPDATE",
+    dados_anteriores: atual as unknown as Record<string, unknown>,
+    dados_novos: { impacto: input.impacto },
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
   });
   revalidarChamado(input.chamadoId);
   return { ok: true };

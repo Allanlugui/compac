@@ -28,6 +28,14 @@ const ROTULO_STATUS: Record<string, string> = {
   concluido: "Concluído",
 };
 
+const ROTULO_IMPACTO: Record<string, string> = {
+  baixo: "Baixo",
+  medio: "Médio",
+  alto: "Alto",
+  critico: "Crítico",
+  parada_total: "Parada total",
+};
+
 function FotosOS({ titulo, fotos }: { titulo: string; fotos: string[] }) {
   return (
     <section className="mt-6 break-inside-avoid">
@@ -255,6 +263,10 @@ export default async function OsPage({ params }: OsPageProps) {
             <div>
               <dt className="font-semibold text-zinc-600">Status atual:</dt>
               <dd>{ROTULO_STATUS[chamado.status] ?? chamado.status}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-zinc-600">Impacto operacional:</dt>
+              <dd>{chamado.impacto ? (ROTULO_IMPACTO[chamado.impacto] ?? chamado.impacto) : "—"}</dd>
             </div>
             <div>
               <dt className="font-semibold text-zinc-600">Data de conclusão:</dt>

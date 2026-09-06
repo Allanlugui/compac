@@ -20,8 +20,10 @@ import type { ChamadoComAtivo, Compra } from "@/lib/types";
 import { formatarDataHora, formatarMoeda } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import StatusBadge from "@/app/admin/_components/StatusBadge";
+import ImpactoBadge from "@/app/admin/_components/ImpactoBadge";
 import GaleriaFotos from "@/app/admin/_components/GaleriaFotos";
 import StatusControl from "./StatusControl";
+import ImpactoControl from "./ImpactoControl";
 import FotosDepoisUpload from "./FotosDepoisUpload";
 import ComprasDoChamado from "./ComprasDoChamado";
 import ExecucaoForm from "./ExecucaoForm";
@@ -247,7 +249,10 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
               </span>
             </p>
           </div>
-          <StatusBadge status={chamado.status} />
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={chamado.status} />
+            <ImpactoBadge impacto={chamado.impacto} />
+          </div>
         </div>
       </section>
 
@@ -328,7 +333,10 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
         icone={<Settings2 className="size-4" />}
         titulo="Controle de status"
       >
-        <StatusControl chamadoId={chamado.id} statusAtual={chamado.status} />
+        <div className="space-y-4">
+          <StatusControl chamadoId={chamado.id} statusAtual={chamado.status} />
+          <ImpactoControl chamadoId={chamado.id} impactoAtual={chamado.impacto} />
+        </div>
       </Secao>
 
       {/* Execução da O.S. */}
