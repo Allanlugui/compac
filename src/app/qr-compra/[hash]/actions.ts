@@ -87,11 +87,15 @@ export async function criarSolicitacao(
   }
 
   const supabase = await createClient();
+  // UUID + hash gerados no servidor ANTES do insert: anon tem INSERT mas
+  // não SELECT (sem leitura pública) — sem `.select().single()`.
   for (let tentativa = 0; tentativa < 5; tentativa++) {
+    const id = crypto.randomUUID();
     const qr_code_hash = gerarTokenPublico(24);
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("solicitacoes_compra")
       .insert({
+        id,
         organization_id: orgId,
         setor,
         solicitante,
@@ -100,23 +104,24 @@ export async function criarSolicitacao(
         justificativa,
         valor_estimado: valorEstimado,
         qr_code_hash,
-      })
-      .select("id")
-      .single();
+      });
 
     if (error) {
+      // Log server-side controlado (sem segredos); usuário vê msg genérica.
+      console.error(
+        "[qr-compra] insert solicitacao:",
+        error.code ?? "?",
+        (error.message ?? "").slice(0, 200),
+      );
       if (error.code !== "23505") {
         return { ok: false, error: "Não foi possível registrar. Tente novamente." };
       }
       continue;
     }
-    if (!data) {
-      return { ok: false, error: "Não foi possível registrar. Tente novamente." };
-    }
 
-    const id = data.id as string;
-    // Item espelhado na tabela de itens (detalhe interno lista itens).
-    await svc.from("solicitacao_itens").insert({
+    // Item espelhado (detalhe interno lista itens). Falha aqui compensa:
+    // apaga a solicitação para não afirmar sucesso parcial.
+    const { error: itemError } = await svc.from("solicitacao_itens").insert({
       organization_id: orgId,
       solicitacao_id: id,
       produto_id: null,
@@ -126,7 +131,19 @@ export async function criarSolicitacao(
       justificativa,
       urgencia: "normal",
     });
-    await svc.from("auditoria_logs").insert({
+    if (itemError) {
+      console.error(
+        "[qr-compra] insert item:",
+        itemError.code ?? "?",
+        (itemError.message ?? "").slice(0, 200),
+      );
+      await svc.from("solicitacoes_compra").delete().eq("id", id);
+      return { ok: false, error: "Não foi possível registrar. Tente novamente." };
+    }
+
+    // Auditoria best-effort documentada: falha não desfaz a operação,
+    // só registra no log do servidor (sem detalhes ao usuário).
+    const { error: auditError } = await svc.from("auditoria_logs").insert({
       tabela: "solicitacoes_compra",
       registro_id: id,
       acao: "INSERT",
@@ -135,6 +152,13 @@ export async function criarSolicitacao(
       executado_por: solicitante,
       organization_id: orgId,
     });
+    if (auditError) {
+      console.error(
+        "[qr-compra] insert audit:",
+        auditError.code ?? "?",
+        (auditError.message ?? "").slice(0, 200),
+      );
+    }
 
     return { ok: true, id, hash: qr_code_hash };
   }

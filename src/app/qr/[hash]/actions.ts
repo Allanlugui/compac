@@ -67,29 +67,35 @@ export async function criarChamado(
     .slice(0, MAX_FOTOS);
 
   const supabase = await createClient();
-  const { data, error } = await supabase
+  // UUID gerado no servidor ANTES do insert (mesmo motivo do qr-compra:
+  // anon tem INSERT, sem SELECT — nada de `.select().single()`).
+  const id = crypto.randomUUID();
+  const { error } = await supabase
     .from("chamados")
     .insert({
+      id,
       organization_id: orgId,
       ativo_id: ativoId,
       solicitante,
       descricao,
       fotos_antes: fotosAntes,
-    })
-    .select("id")
-    .single();
+    });
 
-  if (error || !data) {
+  if (error) {
+    console.error(
+      "[qr] insert chamado:",
+      error.code ?? "?",
+      (error.message ?? "").slice(0, 200),
+    );
     return {
       ok: false,
       error: "Não foi possível registrar o chamado. Tente novamente.",
     };
   }
 
-  const id = data.id as string;
   // Metadados das fotos do antes (visitante: user_id null; autor no audit).
   if (fotosAntes.length > 0) {
-    await svc.from("os_fotos").insert(
+    const { error: fotosError } = await svc.from("os_fotos").insert(
       fotosAntes.map((path) => ({
         organization_id: orgId,
         chamado_id: id,
@@ -98,8 +104,16 @@ export async function criarChamado(
         user_id: null,
       })),
     );
+    if (fotosError) {
+      console.error(
+        "[qr] insert os_fotos:",
+        fotosError.code ?? "?",
+        (fotosError.message ?? "").slice(0, 200),
+      );
+    }
   }
-  await svc.from("auditoria_logs").insert({
+  // Auditoria best-effort documentada (não desfaz o chamado; só loga).
+  const { error: auditError } = await svc.from("auditoria_logs").insert({
     tabela: "chamados",
     registro_id: id,
     acao: "INSERT",
@@ -108,6 +122,13 @@ export async function criarChamado(
     executado_por: solicitante,
     organization_id: orgId,
   });
+  if (auditError) {
+    console.error(
+      "[qr] insert audit:",
+      auditError.code ?? "?",
+      (auditError.message ?? "").slice(0, 200),
+    );
+  }
 
   return { ok: true, id };
 }
