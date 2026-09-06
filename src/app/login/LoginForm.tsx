@@ -29,7 +29,14 @@ export default function LoginForm() {
         password: senha,
       });
       if (error) throw new Error("E-mail ou senha inválidos.");
-      await auditLogin();
+      // Auditoria é observabilidade: nunca pode bloquear o login.
+      // (No primeiro acesso o proxy redireciona; se a action falhar,
+      // a sessão já existe e o refresh mostra o formulário.)
+      try {
+        await auditLogin();
+      } catch {
+        // silencioso
+      }
       // Recarrega a sessão para ler a flag de senha provisória.
       const { data } = await supabase.auth.getUser();
       const destino =

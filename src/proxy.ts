@@ -31,6 +31,14 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
+
+  // Server Actions (POST + header next-action) recebem JSON, nunca redirect
+  // do proxy: redirecionar aqui quebra a action com "unexpected response".
+  // A navegação client-side (router.push) aplica as regras no GET seguinte.
+  if (request.headers.has("next-action") || request.method !== "GET") {
+    return supabaseResponse;
+  }
+
   const rotaAdmin = path.startsWith("/admin");
   const rotaAuth =
     path === "/login" ||
