@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { LoaderCircle, TriangleAlert, Wrench } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { destinoSeguro } from "@/lib/redirect";
 import { auditLogin } from "./actions";
 
 export default function LoginForm() {
@@ -42,7 +43,7 @@ export default function LoginForm() {
       const destino =
         data.user?.user_metadata?.must_change_password === true
           ? "/primeiro-acesso"
-          : params.get("next") || "/admin/dashboard";
+          : destinoSeguro(params.get("next"), "/admin/dashboard");
       router.push(destino);
       router.refresh();
     } catch (err) {

@@ -4,7 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export interface CriarChamadoInput {
-  ativoId: string;
+  /** Token público do QR (da URL). O ativo E o tenant são resolvidos no servidor. */
+  token: string;
   solicitante: string;
   descricao: string;
   /** PATHS do Storage (`o/{org}/...`) gerados pelo upload server-side. */
@@ -20,18 +21,20 @@ const MAX_DESCRICAO = 2000;
 const MAX_FOTOS = 6;
 
 /**
- * Registra chamado público. Tenant NUNCA vem do cliente: é resolvido
- * do ativo no servidor e cada foto é validada contra o prefixo da org.
- * Insert via anon (RLS `chamados_insert_publico`); audit via service
- * (anon não tem INSERT em auditoria).
+ * Registra chamado público. NADA de tenant/ativo vem do cliente além do
+ * token da URL: ativo e organization_id são resolvidos no servidor e cada
+ * foto é validada contra o prefixo da org. O UUID do ativo nunca trafega
+ * no HTML. Insert via anon (RLS `chamados_insert_publico`); audit via
+ * service (anon não tem INSERT em auditoria).
  */
 export async function criarChamado(
   input: CriarChamadoInput,
 ): Promise<CriarChamadoResult> {
   const solicitante = input.solicitante.trim();
   const descricao = input.descricao.trim();
+  const token = (input.token ?? "").trim();
 
-  if (!input.ativoId) {
+  if (!token || token.length < 8) {
     return { ok: false, error: "Ativo inválido. Escaneie o QR Code novamente." };
   }
   if (solicitante.length < 2 || solicitante.length > MAX_SOLICITANTE) {
@@ -48,16 +51,17 @@ export async function criarChamado(
   const { data: ativo } = await svc
     .from("ativos")
     .select("id, organization_id")
-    .eq("id", input.ativoId)
+    .eq("qr_code_hash", token)
     .maybeSingle();
 
   if (!ativo?.organization_id) {
     return { ok: false, error: "Ativo não encontrado." };
   }
   const orgId = ativo.organization_id as string;
+  const ativoId = ativo.id as string;
 
   // Só aceita fotos dentro do prefixo da org do ativo (anti-forgery).
-  const prefixo = `o/${orgId}/chamados/${input.ativoId}/`;
+  const prefixo = `o/${orgId}/chamados/${ativoId}/`;
   const fotosAntes = (Array.isArray(input.fotosAntes) ? input.fotosAntes : [])
     .filter((u) => typeof u === "string" && u.startsWith(prefixo))
     .slice(0, MAX_FOTOS);
@@ -67,7 +71,7 @@ export async function criarChamado(
     .from("chamados")
     .insert({
       organization_id: orgId,
-      ativo_id: input.ativoId,
+      ativo_id: ativoId,
       solicitante,
       descricao,
       fotos_antes: fotosAntes,
@@ -88,7 +92,7 @@ export async function criarChamado(
     registro_id: id,
     acao: "INSERT",
     dados_anteriores: null,
-    dados_novos: { ativo_id: input.ativoId, solicitante, fotos: fotosAntes.length },
+    dados_novos: { ativo_id: ativoId, solicitante, fotos: fotosAntes.length },
     executado_por: solicitante,
     organization_id: orgId,
   });

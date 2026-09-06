@@ -78,7 +78,6 @@ export async function atualizarStatusPedido(input: {
       tipo: "pedido",
       titulo: `Pedido ${input.status === "aprovado" ? "aprovado" : "rejeitado"}: ${atual.item}`,
       link: "/admin/compras",
-      orgId: ctx.orgId,
     });
   }
 
@@ -193,7 +192,6 @@ export async function efetivarPedido(
     tipo: "compra",
     titulo: `Compra registrada: ${pedido.item}`,
     link: "/admin/compras",
-    orgId: ctx.orgId,
   });
 
   revalidar();

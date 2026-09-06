@@ -14,9 +14,15 @@ export interface ResultadoBusca {
 /**
  * Busca global por termo, escopo da org ativa. Sem dados fictícios:
  * retorna apenas o que existe (limite 5 por categoria).
+ *
+ * HARDENING: o termo é sanitizado — `,`/`(`/`)` quebrariam a sintaxe
+ * `or()` do PostgREST e `%`/`_` virariam curingas do ILIKE.
  */
 export async function buscarGlobal(termo: string): Promise<ResultadoBusca[]> {
-  const t = termo.trim();
+  const t = termo
+    .replace(/[%_,()\"'\\;]/g, "")
+    .trim()
+    .slice(0, 60);
   if (t.length < 2) return [];
   const ctx = await requireOrg();
   const supabase = await createClient();

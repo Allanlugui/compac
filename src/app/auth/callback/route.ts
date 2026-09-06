@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { destinoSeguro } from "@/lib/redirect";
 
 /** Troca `code` por sessão (login, convite, recovery) e redireciona. */
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  const next = url.searchParams.get("next") ?? "/admin/dashboard";
+  // `next` sanitizado: só caminho interno (anti open-redirect).
+  const next = destinoSeguro(url.searchParams.get("next"), "/admin/dashboard");
 
   if (code) {
     const jar = await cookies();

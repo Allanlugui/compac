@@ -36,7 +36,18 @@ function sanitizar(nome: string): string {
 }
 
 function validarArquivo(file: File): string | null {
-  if (!file.type.startsWith("image/")) return "Apenas imagens.";
+  // Allowlist estrita: SVG e formatos ativos são vetados (XSS armazenado).
+  // MIME vem do cliente — é só a primeira barreira; o nome é gerado no
+  // servidor e a exibição usa signed URL com content-type armazenado.
+  const MIME_PERMITIDOS = new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "image/heic",
+    "image/heif",
+  ]);
+  if (!MIME_PERMITIDOS.has(file.type)) return "Apenas fotos JPG, PNG, WebP ou GIF.";
   if (file.size <= 0 || file.size > MAX_BYTES) return "Imagem excede 8 MB.";
   return null;
 }

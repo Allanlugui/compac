@@ -27,8 +27,19 @@ export default function FotosDepoisUpload({ chamadoId }: { chamadoId: string }) 
       return;
     }
     const novas: File[] = [];
+    const MIME_PERMITIDOS = new Set([
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "image/heic",
+      "image/heif",
+    ]);
     for (const file of Array.from(lista).slice(0, restantes)) {
-      if (!file.type.startsWith("image/")) continue;
+      if (!MIME_PERMITIDOS.has(file.type)) {
+        setErro(`"${file.name}" não é JPG/PNG/WebP/GIF e foi ignorada.`);
+        continue;
+      }
       if (file.size > MAX_BYTES_POR_FOTO) {
         setErro(`"${file.name}" excede 8 MB e foi ignorada.`);
         continue;

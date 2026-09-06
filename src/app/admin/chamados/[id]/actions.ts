@@ -71,7 +71,6 @@ export async function atualizarStatus(input: {
     titulo: `O.S. ${input.status === "concluido" ? "concluída" : input.status === "em_andamento" ? "em execução" : "reaberta"}`,
     descricao: `Chamado atualizado por ${ctx.email}.`,
     link: `/admin/chamados/${input.chamadoId}`,
-    orgId: ctx.orgId,
   });
   revalidarChamado(input.chamadoId);
   return { ok: true };

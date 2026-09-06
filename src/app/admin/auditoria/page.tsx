@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { Activity, Database, FileClock, ScrollText } from "lucide-react";
+import { Activity, Database, FileClock, ScrollText, ShieldX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
+import { exigirPapel } from "@/lib/roles";
 import type { AuditoriaLog } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import LogsAuditoria from "./LogsAuditoria";
@@ -36,7 +37,30 @@ async function checar(
 
 export default async function AuditoriaPage() {
   const supabase = await createClient();
-  const ctx = await requireOrg();
+  let ctx: Awaited<ReturnType<typeof requireOrg>>;
+  try {
+    ctx = await requireOrg();
+    // Trilha administrativa: só ADMIN, GESTOR e AUDITOR.
+    // TECNICO/COMPRAS/SOLICITANTE veem "restrito" (actions seguem barrando).
+    exigirPapel(ctx, ["ADMIN", "GESTOR", "AUDITOR"]);
+  } catch {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-zinc-900">
+            Auditoria
+          </h1>
+          <p className="mt-0.5 text-sm text-zinc-500">
+            Trilha de mutações do sistema e homologação da plataforma.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
+          <ShieldX className="mx-auto size-10 text-zinc-300" />
+          <p className="mt-2 font-bold">Área restrita (ADMIN, GESTOR, AUDITOR)</p>
+        </div>
+      </div>
+    );
+  }
 
   const { data: logsData } = await supabase
     .from("auditoria_logs")

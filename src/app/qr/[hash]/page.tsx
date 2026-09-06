@@ -22,13 +22,13 @@ export default async function QrPage({ params }: QrPageProps) {
 
   const { data } = await svc
     .from("ativos")
-    .select("id, nome, localizacao")
+    .select("nome, localizacao")
     .eq("qr_code_hash", hash)
     .maybeSingle();
 
   const ativo = (data ?? null) as Pick<
     Ativo,
-    "id" | "nome" | "localizacao"
+    "nome" | "localizacao"
   > | null;
 
   // ---------- Ativo não encontrado ----------

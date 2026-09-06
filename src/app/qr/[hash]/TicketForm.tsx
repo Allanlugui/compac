@@ -17,8 +17,9 @@ import { cn } from "@/lib/utils";
 import { criarChamado } from "./actions";
 
 interface TicketFormProps {
-  ativo: { id: string; nome: string; localizacao: string | null };
-  /** Token público da URL (usado no upload server-side). */
+  // Só nome/localização trafegam no HTML (o id fica no servidor).
+  ativo: { nome: string; localizacao: string | null };
+  /** Token público da URL (usado no upload e no registro, server-side). */
   token: string;
 }
 
@@ -60,8 +61,19 @@ export default function TicketForm({ ativo, token }: TicketFormProps) {
       return;
     }
     const novas: FotoSelecionada[] = [];
+    const MIME_PERMITIDOS = new Set([
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "image/heic",
+      "image/heif",
+    ]);
     for (const file of Array.from(lista).slice(0, restantes)) {
-      if (!file.type.startsWith("image/")) continue;
+      if (!MIME_PERMITIDOS.has(file.type)) {
+        setErro(`"${file.name}" não é JPG/PNG/WebP/GIF e foi ignorada.`);
+        continue;
+      }
       if (file.size > MAX_BYTES_POR_FOTO) {
         setErro(`"${file.name}" excede 8 MB e foi ignorada.`);
         continue;
@@ -95,10 +107,10 @@ export default function TicketForm({ ativo, token }: TicketFormProps) {
         paths.push(up.path);
       }
 
-      // 2. Registro do chamado via Server Action.
+      // 2. Registro do chamado via Server Action (token→ativo→org no servidor).
       setFase("Registrando chamado…");
       const resultado = await criarChamado({
-        ativoId: ativo.id,
+        token,
         solicitante,
         descricao,
         fotosAntes: paths,

@@ -111,6 +111,8 @@ export async function setActiveOrg(organizationId: string): Promise<void> {
   const jar = await cookies();
   jar.set(COOKIE_ORG, organizationId, {
     httpOnly: true,
+    // Em produção (HTTPS) o navegador só envia via TLS.
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 30,

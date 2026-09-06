@@ -164,7 +164,6 @@ export async function movimentarEstoque(input: MovimentarInput): Promise<Estoque
       titulo: `Estoque crítico: ${produto.codigo}`,
       descricao: `Saldo ${novoSaldo} atingiu o mínimo.`,
       link: "/admin/estoque",
-      orgId: ctx.orgId,
     });
   }
   return { ok: true };
