@@ -37,7 +37,7 @@ export default async function EstoquePage() {
   }));
 
   const criticos = produtos.filter(
-    (p) => Number(p.estoque_atual ?? 0) <= Number(p.estoque_minimo ?? 0),
+    (p) => Number(p.estoque_atual ?? 0) - Number(p.estoque_reservado ?? 0) <= Number(p.estoque_minimo ?? 0),
   );
   const valor = produtos.reduce(
     (s, p) => s + Number(p.estoque_atual ?? 0) * Number(p.custo_medio ?? 0),

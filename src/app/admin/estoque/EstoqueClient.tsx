@@ -11,9 +11,10 @@ import { criarProduto, movimentarEstoque } from "./actions";
 const TIPOS: { id: TipoMovimentacao; rotulo: string }[] = [
   { id: "entrada", rotulo: "Entrada" },
   { id: "saida", rotulo: "Saída" },
-  { id: "ajuste", rotulo: "Ajuste (define saldo)" },
-  { id: "reserva", rotulo: "Reserva" },
+  { id: "ajuste", rotulo: "Ajuste (define físico)" },
+  { id: "reserva", rotulo: "Reserva p/ O.S." },
   { id: "consumo", rotulo: "Consumo em O.S." },
+  { id: "devolucao", rotulo: "Devolução de reserva" },
 ];
 
 function hojeISO(): string {
@@ -151,8 +152,10 @@ export default function EstoqueClient({
           ) : (
             <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {filtrados.map((p) => {
-                const saldo = Number(p.estoque_atual ?? 0);
-                const critico = saldo <= Number(p.estoque_minimo ?? 0);
+                const fisico = Number(p.estoque_atual ?? 0);
+                const reservado = Number(p.estoque_reservado ?? 0);
+                const disponivel = fisico - reservado;
+                const critico = disponivel <= Number(p.estoque_minimo ?? 0);
                 return (
                   <li key={p.id} className={cn("rounded-2xl border bg-white p-4 shadow-sm", critico ? "border-red-300 ring-1 ring-red-200" : "border-zinc-200")}>
                     <div className="flex items-start justify-between gap-2">
@@ -165,7 +168,10 @@ export default function EstoqueClient({
                     </div>
                     <p className="mt-1 truncate text-sm font-bold" title={p.descricao}>{p.descricao}</p>
                     <p className="mt-2 text-2xl font-black tabular-nums">
-                      {String(saldo)} <span className="text-xs font-medium text-zinc-400">{p.unidade} · mín {String(p.estoque_minimo)}</span>
+                      {String(disponivel)} <span className="text-xs font-medium text-zinc-400">{p.unidade} disp. · mín {String(p.estoque_minimo)}</span>
+                    </p>
+                    <p className="mt-0.5 text-xs text-zinc-400 tabular-nums">
+                      físico {String(fisico)} · reservado {String(reservado)}
                     </p>
                   </li>
                 );
@@ -217,7 +223,7 @@ export default function EstoqueClient({
                     </p>
                   </div>
                   <p className="font-black tabular-nums">
-                    {m.tipo === "ajuste" ? "=" : ["entrada"].includes(m.tipo) ? "+" : "−"}{String(m.quantidade)}
+                    {m.tipo === "ajuste" ? "=" : ["entrada", "devolucao"].includes(m.tipo) ? "+" : "−"}{String(m.quantidade)}
                   </p>
                 </li>
               ))}

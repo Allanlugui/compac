@@ -4,15 +4,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LoaderCircle, PackageMinus, TriangleAlert } from "lucide-react";
 import { movimentarEstoque } from "@/app/admin/estoque/actions";
+import type { TipoMovimentacao } from "@/lib/types";
 
 export interface ProdutoOpcao {
   id: string;
   codigo: string;
   descricao: string;
+  /** Disponível = físico − reservado. */
   saldo: number;
+  fisico: number;
+  reservado: number;
 }
 
-/** Baixa de peça do estoque vinculada à O.S. (gera movimentação `consumo`). */
+/** Reserva ou baixa de peça vinculada à O.S. (dois baldes, sem dupla contagem). */
 export default function ConsumoEstoque({
   chamadoId,
   produtos,
@@ -22,6 +26,7 @@ export default function ConsumoEstoque({
 }) {
   const router = useRouter();
   const [produtoId, setProdutoId] = useState("");
+  const [tipo, setTipo] = useState<TipoMovimentacao>("reserva");
   const [quantidade, setQuantidade] = useState("1");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -34,11 +39,11 @@ export default function ConsumoEstoque({
     try {
       const r = await movimentarEstoque({
         produtoId,
-        tipo: "consumo",
+        tipo,
         quantidade: Number(quantidade),
         custoUnitario: 0,
         chamadoId,
-        observacao: "Consumo via O.S.",
+        observacao: tipo === "reserva" ? "Reserva via O.S." : "Consumo via O.S.",
       });
       if (!r.ok) throw new Error(r.error);
       setProdutoId("");
@@ -61,6 +66,18 @@ export default function ConsumoEstoque({
 
   return (
     <form onSubmit={consumir} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <label className="block sm:w-32">
+        <span className="mb-1 block text-xs font-bold text-zinc-700">Operação</span>
+        <select
+          value={tipo}
+          onChange={(e) => setTipo(e.target.value as TipoMovimentacao)}
+          disabled={salvando}
+          className="min-h-[44px] w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm focus:border-zinc-900 focus:outline-none disabled:opacity-60"
+        >
+          <option value="reserva">Reservar</option>
+          <option value="consumo">Consumir</option>
+        </select>
+      </label>
       <label className="block flex-1">
         <span className="mb-1 block text-xs font-bold text-zinc-700">Peça do estoque</span>
         <select
@@ -73,7 +90,7 @@ export default function ConsumoEstoque({
           <option value="">Selecionar…</option>
           {produtos.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.codigo} — {p.descricao} (saldo {String(p.saldo)})
+              {p.codigo} — {p.descricao} (disp {String(p.saldo)} · fís {String(p.fisico)})
             </option>
           ))}
         </select>
@@ -88,7 +105,7 @@ export default function ConsumoEstoque({
       </label>
       <button type="submit" disabled={salvando} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-5 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
         {salvando ? <LoaderCircle className="size-4 animate-spin" /> : <PackageMinus className="size-4" />}
-        Dar baixa
+        {tipo === "reserva" ? "Reservar" : "Dar baixa"}
       </button>
       {erro && (
         <p role="alert" className="flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700 ring-1 ring-red-200 sm:basis-full">

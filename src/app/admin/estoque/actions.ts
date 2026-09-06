@@ -73,10 +73,14 @@ export interface MovimentarInput {
 }
 
 /**
- * Movimenta estoque (entrada/saída/ajuste/reserva/consumo).
- * `ajuste` redefine o saldo para `quantidade`; demais somam/subtraem.
- * Bloqueia saída/consumo sem saldo (salvo reserva, que pode negativar
- * para sinalizar pendência — documentado na UI).
+ * Movimenta estoque em DOIS baldes (gate FASE 3 §7):
+ *  - entrada: físico += q
+ *  - saida: exige disponível ≥ q; físico −= q
+ *  - reserva: exige disponível ≥ q; reservado += q (físico intacto)
+ *  - consumo: exige físico ≥ q; físico −= q e abate reserva até zerar
+ *  - devolucao: retorna reserva ao disponível (físico intacto)
+ *  - ajuste: redefine o FÍSICO para `quantidade` (reservado intacto)
+ * Teste-guia: 10 → reserva 3 (fís 10/res 3) → consome 2 (fís 8/res 1).
  */
 export async function movimentarEstoque(input: MovimentarInput): Promise<EstoqueResult> {
   const ctx = await requireOrg();
@@ -84,7 +88,7 @@ export async function movimentarEstoque(input: MovimentarInput): Promise<Estoque
 
   const quantidade = Number(input.quantidade);
   if (!input.produtoId) return { ok: false, error: "Produto inválido." };
-  if (!["entrada", "saida", "ajuste", "reserva", "consumo"].includes(input.tipo)) {
+  if (!["entrada", "saida", "ajuste", "reserva", "consumo", "devolucao"].includes(input.tipo)) {
     return { ok: false, error: "Tipo inválido." };
   }
   if (!Number.isFinite(quantidade) || quantidade <= 0) {
@@ -94,20 +98,44 @@ export async function movimentarEstoque(input: MovimentarInput): Promise<Estoque
   const supabase = await createClient();
   const { data: produto } = await supabase
     .from("produtos")
-    .select("id, estoque_atual, estoque_minimo, codigo")
+    .select("id, estoque_atual, estoque_reservado, estoque_minimo, codigo")
     .eq("id", input.produtoId)
     .eq("organization_id", ctx.orgId)
     .maybeSingle();
   if (!produto) return { ok: false, error: "Produto não encontrado." };
 
-  const saldo = Number(produto.estoque_atual ?? 0);
-  let novoSaldo = saldo;
-  if (input.tipo === "entrada") novoSaldo = saldo + quantidade;
-  else if (input.tipo === "ajuste") novoSaldo = quantidade;
-  else novoSaldo = saldo - quantidade;
+  const fisico = Number((produto as { estoque_atual: number }).estoque_atual ?? 0);
+  const reservado = Number((produto as { estoque_reservado: number }).estoque_reservado ?? 0);
+  const disponivel = fisico - reservado;
+  let novoFisico = fisico;
+  let novoReservado = reservado;
 
-  if ((input.tipo === "saida" || input.tipo === "consumo") && novoSaldo < 0) {
-    return { ok: false, error: `Saldo insuficiente (atual: ${saldo}).` };
+  if (input.tipo === "entrada") {
+    novoFisico = fisico + quantidade;
+  } else if (input.tipo === "ajuste") {
+    if (quantidade < reservado) {
+      return { ok: false, error: `Ajuste abaixo da reserva (${reservado}). Devolva antes.` };
+    }
+    novoFisico = quantidade;
+  } else if (input.tipo === "saida") {
+    if (quantidade > disponivel) {
+      return { ok: false, error: `Disponível insuficiente (disp: ${disponivel}).` };
+    }
+    novoFisico = fisico - quantidade;
+  } else if (input.tipo === "reserva") {
+    if (quantidade > disponivel) {
+      return { ok: false, error: `Disponível insuficiente (disp: ${disponivel}).` };
+    }
+    novoReservado = reservado + quantidade;
+  } else if (input.tipo === "consumo") {
+    if (quantidade > fisico) {
+      return { ok: false, error: `Saldo físico insuficiente (físico: ${fisico}).` };
+    }
+    novoFisico = fisico - quantidade;
+    novoReservado = Math.max(0, reservado - quantidade);
+  } else {
+    // devolucao: libera reserva (nunca abaixo de zero, nunca acima do físico).
+    novoReservado = Math.max(0, reservado - quantidade);
   }
 
   let chamadoId: string | null = null;
@@ -136,7 +164,7 @@ export async function movimentarEstoque(input: MovimentarInput): Promise<Estoque
 
   await supabase
     .from("produtos")
-    .update({ estoque_atual: novoSaldo })
+    .update({ estoque_atual: novoFisico, estoque_reservado: novoReservado })
     .eq("id", input.produtoId)
     .eq("organization_id", ctx.orgId);
 
@@ -144,11 +172,11 @@ export async function movimentarEstoque(input: MovimentarInput): Promise<Estoque
     tabela: "movimentacoes_estoque",
     registro_id: input.produtoId,
     acao:
-      input.tipo === "entrada" ? "STOCK_ENTRY"
+      input.tipo === "entrada" || input.tipo === "devolucao" ? "STOCK_ENTRY"
       : input.tipo === "ajuste" ? "STOCK_ADJUSTMENT"
       : "STOCK_EXIT",
-    dados_anteriores: { saldo },
-    dados_novos: { tipo: input.tipo, quantidade, novo_saldo: novoSaldo, chamado_id: chamadoId },
+    dados_anteriores: { fisico, reservado },
+    dados_novos: { tipo: input.tipo, quantidade, novo_fisico: novoFisico, novo_reservado: novoReservado, chamado_id: chamadoId },
     executado_por: ctx.email,
     organization_id: ctx.orgId,
     user_id: ctx.userId,
@@ -156,11 +184,12 @@ export async function movimentarEstoque(input: MovimentarInput): Promise<Estoque
 
   revalidar();
   if (chamadoId) revalidatePath(`/admin/chamados/${chamadoId}`);
-  if (novoSaldo <= Number(produto.estoque_minimo ?? 0)) {
+  const novoDisponivel = novoFisico - novoReservado;
+  if (novoDisponivel <= Number((produto as { estoque_minimo: number }).estoque_minimo ?? 0)) {
     await notificar({
       tipo: "estoque",
-      titulo: `Estoque crítico: ${produto.codigo}`,
-      descricao: `Saldo ${novoSaldo} atingiu o mínimo.`,
+      titulo: `Estoque crítico: ${(produto as { codigo: string }).codigo}`,
+      descricao: `Disponível ${novoDisponivel} atingiu o mínimo.`,
       link: "/admin/estoque",
     });
   }

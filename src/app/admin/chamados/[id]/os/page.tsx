@@ -37,6 +37,51 @@ const ROTULO_IMPACTO: Record<string, string> = {
   parada_total: "Parada total",
 };
 
+/** Dados do ativo no documento (gate §4: tudo derivado do cadastro). */
+function AtivoDocDados({
+  ativo,
+}: {
+  ativo: {
+    nome: string;
+    codigo: string | null;
+    fabricante: string | null;
+    modelo: string | null;
+    numero_serie: string | null;
+    patrimonio: string | null;
+    localizacao: string | null;
+    criticidade: string | null;
+    status: string | null;
+    categorias: { nome: string } | { nome: string }[] | null;
+  } | null;
+}) {
+  if (!ativo) return <p className="mt-3 text-sm">Ativo removido.</p>;
+  const cat = Array.isArray(ativo.categorias)
+    ? (ativo.categorias[0]?.nome ?? null)
+    : (ativo.categorias?.nome ?? null);
+  const linhas: [string, string | null][] = [
+    ["Ativo", ativo.nome],
+    ["Código", ativo.codigo],
+    ["Categoria", cat],
+    ["Fabricante", ativo.fabricante],
+    ["Modelo", ativo.modelo],
+    ["Nº de série", ativo.numero_serie],
+    ["Patrimônio", ativo.patrimonio],
+    ["Localização", ativo.localizacao],
+    ["Criticidade", ativo.criticidade],
+    ["Status do ativo", ativo.status],
+  ];
+  return (
+    <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+      {linhas.map(([k, v]) => (
+        <div key={k}>
+          <dt className="font-semibold text-zinc-600">{k}:</dt>
+          <dd>{v || "—"}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function FotosOS({ titulo, fotos }: { titulo: string; fotos: string[] }) {
   return (
     <section className="mt-6 break-inside-avoid">
@@ -82,7 +127,7 @@ export default async function OsPage({ params }: OsPageProps) {
   ] = await Promise.all([
     supabase
       .from("chamados")
-      .select("*, ativos(id, nome, localizacao)")
+      .select("*, ativos(id, nome, codigo, categoria_id, fabricante, modelo, numero_serie, patrimonio, localizacao, criticidade, status, categorias(nome))")
       .eq("id", id)
       .eq("organization_id", ctx.orgId)
       .maybeSingle(),
@@ -226,21 +271,27 @@ export default async function OsPage({ params }: OsPageProps) {
           </div>
         </header>
 
-        {/* Dados do ativo */}
+        {/* Dados do ativo (tudo puxado do cadastro — sem redigitar) */}
         <section className="mt-6">
           <h2 className="border-b-2 border-zinc-900 pb-1 text-sm font-bold tracking-wide uppercase">
             1 · Dados do ativo
           </h2>
-          <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="font-semibold text-zinc-600">Ativo:</dt>
-              <dd>{chamado.ativos?.nome ?? "Ativo removido"}</dd>
-            </div>
-            <div>
-              <dt className="font-semibold text-zinc-600">Localização:</dt>
-              <dd>{chamado.ativos?.localizacao || "—"}</dd>
-            </div>
-          </dl>
+          <AtivoDocDados
+            ativo={
+              chamado.ativos as unknown as {
+                nome: string;
+                codigo: string | null;
+                fabricante: string | null;
+                modelo: string | null;
+                numero_serie: string | null;
+                patrimonio: string | null;
+                localizacao: string | null;
+                criticidade: string | null;
+                status: string | null;
+                categorias: { nome: string } | { nome: string }[] | null;
+              } | null
+            }
+          />
         </section>
 
         {/* Solicitação */}

@@ -340,6 +340,10 @@ export async function atualizarExecucao(
   for (const [rot, v] of [["horímetro", input.horimetro], ["leitura inicial", input.horimetro_ini], ["leitura final", input.horimetro_fim]] as const) {
     if (v !== null && (!Number.isFinite(v) || v < 0)) return { ok: false, error: `${rot} inválido.` };
   }
+  // Sem reset configurado: final menor que inicial é erro.
+  if (input.horimetro_ini !== null && input.horimetro_fim !== null && input.horimetro_fim < input.horimetro_ini) {
+    return { ok: false, error: "Leitura final menor que a inicial (sem reset configurado)." };
+  }
 
   const supabase = await createClient();
   const { data: atual } = await supabase
@@ -398,12 +402,18 @@ function texto(v: unknown, max: number): string | null {
   return t === "" ? null : t;
 }
 
-/** Sincroniza o status do ativo com a O.S. (só transições automáticas seguras). */
+/**
+ * Sincroniza o status do ativo com a O.S. (§25 do plano):
+ *  - em_execucao → em_manutencao (só se operacional)
+ *  - concluida/encerrada → operacional (só se em_manutencao)
+ *  - em_validacao → em_manutencao (retrabalho; só se operacional)
+ * Desativado/inativo/parado/inspeção/instalação NUNCA mudam sozinhos.
+ */
 async function sincronizarAtivo(
   supabase: Awaited<ReturnType<typeof import("@/lib/supabase/server").createClient>>,
   ctx: { orgId: string; email: string; userId: string },
   chamadoId: string,
-  evento: "em_execucao" | "encerrada",
+  evento: "em_execucao" | "em_validacao" | "concluida" | "encerrada",
 ): Promise<void> {
   const { data: ch } = await supabase
     .from("chamados")
@@ -420,20 +430,25 @@ async function sincronizarAtivo(
     .eq("organization_id", ctx.orgId)
     .maybeSingle();
   const atual = (at as { status: string } | null)?.status;
-  const destino = evento === "em_execucao" ? "em_manutencao" : "operacional";
-  const gatilho = evento === "em_execucao" ? "operacional" : "em_manutencao";
-  // Nunca sobrescreve estado manual divergente (§25).
-  if (atual !== gatilho) return;
+  // (estado atual exigido → destino)
+  const regra: Record<string, { de: string; para: string }> = {
+    em_execucao: { de: "operacional", para: "em_manutencao" },
+    em_validacao: { de: "operacional", para: "em_manutencao" },
+    concluida: { de: "em_manutencao", para: "operacional" },
+    encerrada: { de: "em_manutencao", para: "operacional" },
+  };
+  const r = regra[evento];
+  if (!r || atual !== r.de) return;
   await supabase
     .from("ativos")
-    .update({ status: destino, updated_at: new Date().toISOString() })
+    .update({ status: r.para, updated_at: new Date().toISOString() })
     .eq("id", ativoId)
     .eq("organization_id", ctx.orgId);
   await supabase.from("ativo_status_historico").insert({
     organization_id: ctx.orgId,
     ativo_id: ativoId,
     de: atual,
-    para: destino,
+    para: r.para,
     motivo: "Automático pela O.S.",
     user_id: ctx.userId,
   });
@@ -675,8 +690,8 @@ export async function transicaoOS(input: {
     user_id: ctx.userId,
   });
 
-  if (input.para === "em_execucao") {
-    await sincronizarAtivo(supabase, ctx, input.chamadoId, "em_execucao");
+  if (input.para === "em_execucao" || input.para === "em_validacao") {
+    await sincronizarAtivo(supabase, ctx, input.chamadoId, input.para);
   }
   await notificar({
     tipo: "os",
@@ -1050,6 +1065,7 @@ export async function concluirOS(input: { chamadoId: string }): Promise<AcaoResu
     para: "concluida",
     user_id: ctx.userId,
   });
+  await sincronizarAtivo(supabase, ctx, input.chamadoId, "concluida");
   await registrarLog(supabase, {
     tabela: "chamados",
     registro_id: input.chamadoId,

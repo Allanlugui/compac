@@ -124,7 +124,7 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
       .order("data_compra", { ascending: true }),
     supabase
       .from("produtos")
-      .select("id, codigo, descricao, estoque_atual")
+      .select("id, codigo, descricao, estoque_atual, estoque_reservado")
       .eq("organization_id", ctx.orgId)
       .eq("ativo", true)
       .order("codigo", { ascending: true }),
@@ -219,12 +219,19 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
     codigo: string;
     descricao: string;
     estoque_atual: number;
-  }[]).map((p) => ({
-    id: p.id,
-    codigo: p.codigo,
-    descricao: p.descricao,
-    saldo: Number(p.estoque_atual ?? 0),
-  }));
+    estoque_reservado: number;
+  }[]).map((p) => {
+    const fisico = Number(p.estoque_atual ?? 0);
+    const reservado = Number(p.estoque_reservado ?? 0);
+    return {
+      id: p.id,
+      codigo: p.codigo,
+      descricao: p.descricao,
+      saldo: fisico - reservado,
+      fisico,
+      reservado,
+    };
+  });
 
   const modelos = ((modelosData ?? []) as {
     id: string;
@@ -274,7 +281,7 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
     ...((logsData ?? []) as {
       acao: string;
       dados_anteriores: { status?: string } | null;
-      dados_novos: { status?: string } | null;
+      dados_novos: { status?: string; os_status?: string } | null;
       executado_por: string;
       created_at: string;
     }[]).flatMap((l): EventoOS[] => {
@@ -282,6 +289,10 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
       const depois = l.dados_novos?.status;
       if (l.acao === "TRIAGEM") {
         return [{ quando: l.created_at, titulo: "Triagem", detalhe: `por ${l.executado_por}` }];
+      }
+      // Transições da O.S. já aparecem via os_status_historico — sem duplicar.
+      if (l.acao === "STATUS_CHANGE" && l.dados_novos && "os_status" in l.dados_novos) {
+        return [];
       }
       if ((l.acao === "STATUS_CHANGE" || l.acao === "UPDATE") && depois && depois !== antes) {
         return [{

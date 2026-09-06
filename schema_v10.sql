@@ -7,6 +7,31 @@
 -- Idempotente. Nenhum dado é apagado.
 -- ============================================================
 
+-- ---------- 0. estoque: reserva em dois baldes + devolução ----------
+-- físico (estoque_atual) × reservado (estoque_reservado); disponível = físico − reservado.
+-- Reserva move para o balde reservado SEM baixar o físico; consumo baixa os
+-- dois; devolução retorna ao disponível. Sem isso, reservar+consumir contava dobrado.
+alter table public.produtos add column if not exists estoque_reservado numeric
+  not null default 0 check (estoque_reservado >= 0);
+
+do $$
+declare
+  r record;
+begin
+  for r in
+    select conname from pg_constraint
+    where conrelid = 'public.movimentacoes_estoque'::regclass
+      and contype = 'c' and pg_get_constraintdef(oid) like '%reserva%'
+  loop
+    execute format('alter table public.movimentacoes_estoque drop constraint %I', r.conname);
+  end loop;
+  if not exists (select 1 from pg_constraint where conname = 'movimentacoes_tipo_check') then
+    alter table public.movimentacoes_estoque add constraint movimentacoes_tipo_check
+      check (tipo in ('entrada', 'saida', 'ajuste', 'reserva', 'consumo', 'devolucao'));
+  end if;
+end
+$$;
+
 -- ---------- 1. status do chamado: novos valores (legados mantidos) ----------
 do $$
 begin
@@ -344,10 +369,23 @@ begin
       raise exception 'Cross-tenant bloqueado: O.S. de outra organização';
     end if;
   end if;
-  if TG_TABLE_NAME in ('os_atividades', 'os_servicos_externos', 'os_fotos') then
+  if TG_TABLE_NAME in ('os_atividades', 'os_fotos') then
     select organization_id into v_org from public.chamados where id = new.chamado_id;
     if v_org is distinct from new.organization_id then
       raise exception 'Cross-tenant bloqueado: O.S. de outra organização';
+    end if;
+  end if;
+  if TG_TABLE_NAME = 'os_servicos_externos' then
+    select organization_id into v_org from public.chamados where id = new.chamado_id;
+    if v_org is distinct from new.organization_id then
+      raise exception 'Cross-tenant bloqueado: O.S. de outra organização';
+    end if;
+    -- Fornecedor do serviço na mesma org (gate §9: fornecedor B na O.S. A = NEGADO).
+    if new.fornecedor_id is not null then
+      select organization_id into v_org from public.fornecedores where id = new.fornecedor_id;
+      if v_org is distinct from new.organization_id then
+        raise exception 'Cross-tenant bloqueado: fornecedor de outra organização';
+      end if;
     end if;
   end if;
   if TG_TABLE_NAME = 'planos_manutencao' then

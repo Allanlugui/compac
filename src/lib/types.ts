@@ -312,6 +312,8 @@ export interface Produto {
   categoria: string | null;
   unidade: string;
   estoque_atual: number;
+  /** Físico. Reservado em `estoque_reservado`; disponível = físico − reservado. */
+  estoque_reservado: number;
   estoque_minimo: number;
   estoque_maximo: number | null;
   localizacao: string | null;
@@ -323,7 +325,7 @@ export interface Produto {
   categoria_id: string | null;
 }
 
-export type TipoMovimentacao = "entrada" | "saida" | "ajuste" | "reserva" | "consumo";
+export type TipoMovimentacao = "entrada" | "saida" | "ajuste" | "reserva" | "consumo" | "devolucao";
 
 export interface Movimentacao {
   id: string;
