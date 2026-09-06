@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# serena (cache/config local de tooling)
+.serena/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
