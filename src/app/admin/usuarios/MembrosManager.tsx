@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LoaderCircle, TriangleAlert, UserPlus } from "lucide-react";
+import { Check, Copy, KeyRound, LoaderCircle, TriangleAlert, UserPlus } from "lucide-react";
 import type { Role } from "@/lib/types";
 import { convidarMembro } from "./actions";
 
@@ -30,15 +30,26 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
   const [salvando, setSalvando] = useState(false);
   const [processando, setProcessando] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [credencial, setCredencial] = useState<{
+    email: string;
+    senha: string;
+    emailEnviado: boolean;
+  } | null>(null);
+  const [copiado, setCopiado] = useState(false);
 
   async function convidar(e: React.FormEvent) {
     e.preventDefault();
     if (salvando) return;
     setErro(null);
+    setCredencial(null);
     setSalvando(true);
     try {
       const r = await convidarMembro({ email, nome, role });
       if (!r.ok) throw new Error(r.error);
+      if (r.senhaProvisoria !== "") {
+        // Exibição ÚNICA: a senha não fica salva em lugar nenhum.
+        setCredencial({ email, senha: r.senhaProvisoria, emailEnviado: r.emailEnviado });
+      }
       setEmail("");
       setNome("");
       router.refresh();
@@ -47,6 +58,17 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
     } finally {
       setSalvando(false);
     }
+  }
+
+  async function copiarSenha() {
+    if (!credencial) return;
+    try {
+      await navigator.clipboard.writeText(credencial.senha);
+    } catch {
+      // Clipboard indisponível: seleção manual.
+    }
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2000);
   }
 
   const campo =
@@ -83,6 +105,32 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
             </button>
           </div>
         </div>
+        {credencial && (
+          <div role="status" className="mt-3 rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200">
+            <p className="flex items-center gap-1.5 text-sm font-black text-amber-900">
+              <KeyRound className="size-4" />
+              Conta criada! Anote a senha provisória — ela some ao sair daqui.
+            </p>
+            <p className="mt-1 text-xs text-amber-800">
+              {credencial.emailEnviado
+                ? `Também enviada por e-mail para ${credencial.email}.`
+                : "E-mail NÃO enviado (SMTP não configurado) — repasse manualmente."}
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <code className="flex-1 truncate rounded-lg bg-white px-3 py-2 font-mono text-base font-black tracking-widest text-zinc-900 ring-1 ring-amber-200">
+                {credencial.senha}
+              </code>
+              <button
+                type="button"
+                onClick={copiarSenha}
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-zinc-900 px-4 text-sm font-bold text-white hover:bg-zinc-700"
+              >
+                {copiado ? <Check className="size-4" /> : <Copy className="size-4" />}
+                {copiado ? "Copiada!" : "Copiar"}
+              </button>
+            </div>
+          </div>
+        )}
         {erro && (
           <p role="alert" className="mt-3 flex items-start gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700 ring-1 ring-red-200">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" />

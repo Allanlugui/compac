@@ -47,6 +47,19 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Senha provisória: só /primeiro-acesso até definir a permanente.
+  if (
+    user &&
+    user.user_metadata?.must_change_password === true &&
+    (rotaAdmin || path === "/login") &&
+    path !== "/primeiro-acesso"
+  ) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/primeiro-acesso";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
   // Logado tentando abrir telas de auth → dashboard.
   if (user && rotaAuth && !path.startsWith("/auth/")) {
     const url = request.nextUrl.clone();

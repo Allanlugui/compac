@@ -3,23 +3,24 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { enviarSenhaProvisoria } from "@/lib/email";
+import { gerarSenhaProvisoria } from "@/lib/senhas";
 import { registrarLog } from "@/lib/auditoria";
 import { requireOrg } from "@/lib/org";
 import { exigirPapel } from "@/lib/roles";
 import type { Role } from "@/lib/types";
 
-export type UsuarioResult = { ok: true } | { ok: false; error: string };
+export type UsuarioResult =
+  | { ok: true; senhaProvisoria: string; emailEnviado: boolean }
+  | { ok: false; error: string };
 
 const ROLES: Role[] = ["ADMIN", "GESTOR", "TECNICO", "COMPRAS", "AUDITOR", "SOLICITANTE"];
 
-function siteUrl(): string {
-  const base = (process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
-  return base === "" ? "http://localhost:3000" : base;
-}
-
 /**
- * Convida membro (ADMIN). Cria o usuário via Admin API, o profile e a
- * membership com o papel escolhido. Audita MEMBERSHIP_CHANGE.
+ * Cadastra membro com SENHA PROVISÓRIA de uso único (ADMIN).
+ * Fluxo: gera senha → createUser confirmado + flag must_change_password →
+ * profile + membership → e-mail com a senha (SMTP próprio) → audita.
+ * Sem SMTP, a senha retorna para exibição única ao admin.
  */
 export async function convidarMembro(input: {
   email: string;
@@ -42,39 +43,57 @@ export async function convidarMembro(input: {
   }
 
   const svc = createServiceClient();
-  const { data, error } = await svc.auth.admin.inviteUserByEmail(email, {
-    data: { nome },
-    redirectTo: `${siteUrl()}/auth/callback?next=/admin/dashboard`,
+
+  // Checa vínculo existente buscando o user pelo e-mail (lista paginada).
+  const { data: lista } = await svc.auth.admin.listUsers({ perPage: 1000 });
+  const jaExiste = (lista?.users ?? []).find(
+    (u) => u.email?.toLowerCase() === email,
+  );
+  if (jaExiste) {
+    const { data: memb } = await svc
+      .from("memberships")
+      .select("id, status")
+      .eq("organization_id", ctx.orgId)
+      .eq("user_id", jaExiste.id)
+      .maybeSingle();
+    if (memb && memb.status === "ativo") {
+      return { ok: false, error: "Usuário já é membro desta organização." };
+    }
+    if (memb) {
+      await svc
+        .from("memberships")
+        .update({ role: input.role, status: "ativo" })
+        .eq("id", memb.id);
+      revalidatePath("/admin/usuarios");
+      return { ok: true, senhaProvisoria: "", emailEnviado: false };
+    }
+  }
+
+  const senhaProvisoria = gerarSenhaProvisoria(12);
+  const { data, error } = await svc.auth.admin.createUser({
+    email,
+    password: senhaProvisoria,
+    email_confirm: true,
+    user_metadata: { nome, must_change_password: true },
   });
   if (error || !data.user) {
-    return { ok: false, error: "Não foi possível enviar o convite." };
+    return { ok: false, error: "Não foi possível criar o usuário." };
   }
 
   await svc.from("profiles").upsert({ id: data.user.id, nome });
+  await svc.from("memberships").insert({
+    organization_id: ctx.orgId,
+    user_id: data.user.id,
+    role: input.role,
+    status: "ativo",
+  });
 
-  const { data: existente } = await svc
-    .from("memberships")
-    .select("id, status")
-    .eq("organization_id", ctx.orgId)
-    .eq("user_id", data.user.id)
-    .maybeSingle();
-
-  if (existente && existente.status === "ativo") {
-    return { ok: false, error: "Usuário já é membro desta organização." };
-  }
-  if (existente) {
-    await svc
-      .from("memberships")
-      .update({ role: input.role, status: "ativo" })
-      .eq("id", existente.id);
-  } else {
-    await svc.from("memberships").insert({
-      organization_id: ctx.orgId,
-      user_id: data.user.id,
-      role: input.role,
-      status: "ativo",
-    });
-  }
+  const envio = await enviarSenhaProvisoria({
+    para: email,
+    nome,
+    senha: senhaProvisoria,
+    orgNome: ctx.orgNome,
+  });
 
   const supabase = await createClient();
   await registrarLog(supabase, {
@@ -82,19 +101,19 @@ export async function convidarMembro(input: {
     registro_id: data.user.id,
     acao: "MEMBERSHIP_CHANGE",
     dados_anteriores: null,
-    dados_novos: { email, nome, role: input.role, organization_id: ctx.orgId },
+    dados_novos: { email, nome, role: input.role, organization_id: ctx.orgId, email_enviado: envio.enviado },
     executado_por: ctx.email,
   });
 
   revalidatePath("/admin/usuarios");
-  return { ok: true };
+  return { ok: true, senhaProvisoria, emailEnviado: envio.enviado };
 }
 
 /** Troca o papel (ADMIN; nunca o próprio, contra lockout). */
 export async function alterarPapel(input: {
   userId: string;
   role: Role;
-}): Promise<UsuarioResult> {
+}): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await requireOrg();
   exigirPapel(ctx, ["ADMIN"]);
   if (!input.userId || input.userId === ctx.userId) {
@@ -137,7 +156,7 @@ export async function alterarPapel(input: {
 export async function alternarStatusMembro(input: {
   userId: string;
   status: "ativo" | "inativo";
-}): Promise<UsuarioResult> {
+}): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await requireOrg();
   exigirPapel(ctx, ["ADMIN"]);
   if (!input.userId || input.userId === ctx.userId) {

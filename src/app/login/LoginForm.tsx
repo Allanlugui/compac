@@ -30,7 +30,13 @@ export default function LoginForm() {
       });
       if (error) throw new Error("E-mail ou senha inválidos.");
       await auditLogin();
-      router.push(params.get("next") || "/admin/dashboard");
+      // Recarrega a sessão para ler a flag de senha provisória.
+      const { data } = await supabase.auth.getUser();
+      const destino =
+        data.user?.user_metadata?.must_change_password === true
+          ? "/primeiro-acesso"
+          : params.get("next") || "/admin/dashboard";
+      router.push(destino);
       router.refresh();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Falha no login.");
