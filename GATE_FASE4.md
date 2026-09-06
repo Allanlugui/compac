@@ -1,45 +1,85 @@
-# GATE FASE 4 — Suprimentos (código pronto; vivo pendente de banco)
+# GATE FINAL FASE 4 — validação real (Supabase/Vercel)
 
-> Legenda: `PASS` = verificado no código · `BLOCKED` = exige Supabase real
-> (rodar v6→v7→v8→v9→v10→**v11**→**v12** nesta ordem) + 2 usuários.
-> Sem JWT/senhas/tokens aqui. `lint` 0 · `tsc` 0 · `build` 0 (esta revisão).
+> `PASS — código` ≠ `PASS — Supabase real`. Sem JWT/senhas/tokens aqui:
+> só HTTP status + contagens. `LINT 0 · TSC 0 · BUILD 0 · AUDIT 0` (esta revisão).
 
-## 1. Banco (dono)
+## 0. Migrations (dono, nesta ordem, uma por vez)
 
-Aplicar v6..v12 em ordem, uma por vez no SQL Editor. Depois conferir:
-sem perda, sem duplicação, sem órfãos, QRs intactos, legados funcionando.
-Status: **BLOCKED** (aguarda execução; scripts são idempotentes).
+`v6 → v7 → v8 → v9 → v10 → v11 → v12` (todos idempotentes).
+Pule as já aplicadas (sem re-run destrutivo). Depois:
 
-## 2. Matriz
+```sql
+-- sanidade: tabelas novas existem e nada órfão
+select count(*) from public.pedidos_compra;            -- 0, sem erro
+select count(*) from public.recebimentos;              -- 0, sem erro
+select count(*) from public.qr_contextos;              -- 0, sem erro
+select count(*) from public.chamados where organization_id is null; -- 0
+select count(*) from public.ativos where organization_id is null;   -- 0
+-- legados intactos
+select qr_code_hash from public.ativos limit 3;        -- hashes de 12 chars
+select status, count(*) from public.solicitacoes_compra group by 1;
+```
+
+RPC: `select proname, prosecdef, proconfig from pg_proc where proname='movimentar_estoque_atomic';`
+(`prosecdef=true`, `proconfig` com `search_path=public`; owner `postgres`).
+Permissão: só `authenticated` executa (revogado de `public`).
+
+## 1. Matriz (dono executa; app ou SQL Editor + REST com JWT local)
 
 | # | Teste | Esperado | Status |
 |---|---|---|---|
-| 1 | Migrations v6–v12 em ordem | sem perda/órfãos/QR quebrado | BLOCKED — §1 |
-| 2 | 10/10/10 → reserva 3 (10/3/7) → consome 2 (8/1/7) → devolve 1 (8/0/8) | exato, `disponível=físico−reservado` | PASS (dois baldes + RPC) / BLOCKED (ao vivo) |
-| 3 | Disp 5; A consome 4 ok; B tenta 4 | NEGADO, sem inconsistência | PASS (`movimentar_estoque_atomic`, `SELECT … FOR UPDATE`) / BLOCKED (ao vivo) |
-| 4 | Esperado 100, contado 97 → −3 com motivo | estoque+movimento+auditoria | PASS / BLOCKED (ao vivo) |
-| 5 | Transferência 3 (A=10,B=5) → A=7,B=8, par atômico | nunca A−3/B+0 | PASS (par na mesma transação) / BLOCKED (ao vivo) |
-| 6 | Solicitação A×3+B×5+C×2, snapshot, sem produto cross | ok / NEGADO cross | PASS / BLOCKED (ao vivo) |
-| 7 | Solicitante aprova a própria | NEGADO; gestor aprova com registro | PASS (`decidirSolicitacao`) / BLOCKED (ao vivo) |
-| 8 | 2 cotações, 1 vencedora, histórico | única vencedora | PASS / BLOCKED (ao vivo) |
-| 9 | `PED-AAAA-NNNN` único; criar pedido não mexe no estoque | ok | PASS (unique + retry) / BLOCKED (ao vivo) |
-| 10 | 100 → 97+3, motivo, pedido intacto | 97 estoque / 3 divergência | PASS / BLOCKED (ao vivo) |
-| 11 | 40+35+25=100; além do pendente | NEGADO | PASS (trava cumulativa) / BLOCKED (ao vivo) |
-| 12 | 10×10 + 10×20 → médio **15,00**; sem negativo | exato | PASS (ponderado) / BLOCKED (ao vivo) |
-| 13 | Aquisição ≠ estoque ≠ consumo O.S.; sem dupla | separado | PASS (construção) / BLOCKED (ao vivo) |
-| 14 | O.S. A + produto/fornecedor B | NEGADO (action+trigger) | PASS / BLOCKED (ao vivo) |
-| 15 | Fornecedor CRUD+cotação+pedido+recebimento por tenant | ok | PASS / BLOCKED (ao vivo) |
-| 16 | QR contexto → solicitação sem redigitar; sem token nada vaza | ok | PASS / BLOCKED (smartphone) |
-| 17 | Token da org A forjado p/ contexto B | NEGADO (token→org no servidor) | PASS / BLOCKED (ao vivo) |
-| 18 | Foto recebimento câmera+galeria, Storage privado | ok | PASS / BLOCKED (smartphone) |
-| 19 | 15 ações de auditoria da FASE 4 | nomes `*_RESERVED/RELEASED/CONSUMED/TRANSFERRED/REQUEST_*/QUOTE_*/ORDER_*/RECEIPT_*` | PASS |
-| 20 | Roles (SOLICITANTE cria/não aprova; COMPRAS cota/recebe; TECNICO consome; AUDITOR lê) | servidor+RLS | PASS / BLOCKED (ao vivo) |
-| 21 | Matriz cross-tenant completa | NEGADO tudo | BLOCKED |
-| 22 | QR genérico, pedidos/chamados/produtos/fornecedores antigos | intactos | PASS (código) / BLOCKED (ao vivo) |
-| 23 | Ponta a ponta reposição→…→custo→auditoria | fluxo real | BLOCKED |
+| 1 | §0 acima | sem perda/órfãos/QR quebrado | BLOCKED |
+| 2 | Auditoria da RPC (§2–3 deste gate) | 9/9 checks | PASS — código |
+| 3 | Concorrência: disp 5, A consome 4 + B consome 4 | A ok, B NEGADO, final 1 | BLOCKED — ver SQL abaixo |
+| 4 | 10/0/10 → reserva 3 (10/3/7) | físico intacto | BLOCKED |
+| 5 | Consome 2 (8/1/7) + estoque/mov/OS/custo/audit | ok | BLOCKED |
+| 6 | Devolve 1 (8/0/8), sem entrada física | ok | BLOCKED |
+| 7 | Transferência: par atômico, rede zero | nunca A−3/B+0 | BLOCKED |
+| 8 | Recebimento 60+40 ok; +1 | NEGADO (cumulativo) | PASS — código / BLOCKED — vivo |
+| 9 | 100 → 90+10; só 90 entra; pedido intacto | ok | BLOCKED |
+| 10 | 10×10 + 10×20 → médio 15,00; +20×25 → 20,00 | exato | BLOCKED |
+| 11 | Solicitação multi-item; aprovação segregada; cotação vencedora única; pedido sem baixar estoque | ok | BLOCKED |
+| 12 | Cross-tenant RPC (produto B via user A; org forjada) | NEGADO | PASS — código (`eh_membro` na linha travada) / BLOCKED — vivo |
+| 13 | Roles na RPC (AUDITOR/SOLICITANTE alterar; TECNICO ajustar) | NEGADO | PASS — código / BLOCKED — vivo |
+| 14 | Sequência reserva→…→ajuste gera 7 ações individualizadas | nomes FASE 4 | PASS — código / BLOCKED — vivo |
+| 15 | zeros/negativos/inexistentes/cross | NEGADO tudo | PASS — código / BLOCKED — vivo |
+| 16–17 | Solicitação→pedido (estoque intacto); recebimento→entrada | ok | BLOCKED |
+| 18 | O.S. reserva→consome→custo→audit consistente | ok | BLOCKED |
+| 19 | Cross-tenant completo (9 entidades) | NEGADO tudo | BLOCKED |
+| 20 | QR/legados (genérico, pedidos, chamados, produtos, fornecedores) | intactos | PASS — código / BLOCKED — vivo |
 
-## 3. Liberação da FASE 5
+N/A com justificativa: **saldos por almoxarifado (A=7/B=8)** — sem entidade
+`estoque_por_local`; transferência registra par auditado com origem/destino
+(rede zero), sem saldos por local. **Localidade/tenant como parâmetro da RPC**
+— inexistentes por desenho (org deriva da linha travada).
 
-Exige §1 executado + BLOCKED virando PASS na tabela acima.
-Correções desta revisão (código): RPC atômica (`schema_v12.sql`),
-mapeamento de auditoria FASE 4, trava além-do-pendente.
+## 2. SQL do teste de concorrência (§3–4)
+
+```sql
+-- como ADMIN da org (service_role NUNCA no teste; usar JWT do login):
+-- 1) produto com físico 5, reservado 0
+-- 2) em duas abas, quase ao mesmo tempo:
+select public.movimentar_estoque_atomic(
+  '<PRODUTO_UUID>', 'consumo', 4, 0, null, 'teste A', null, null, 'teste');
+-- esperado: uma retorna {"ok":true,...} e a outra {"ok":false,"error":...}
+-- 3) conferir: físico final = 1
+select estoque_atual, estoque_reservado from public.produtos where id = '<PRODUTO_UUID>';
+```
+
+Cross-tenant (§12): mesma chamada com produto da outra org →
+`{"ok":false,"error":"Acesso negado."}` (trocar `organization_id` é impossível:
+a função não recebe org).
+
+## 3. Auditoria da RPC (revisão de código desta etapa)
+
+- Sessão: `auth.uid()` via `eh_membro`/`tem_papel` (JWT, não parâmetro). OK.
+- Tenant: `organization_id` lido da linha travada (`FOR UPDATE`); sem param org. OK.
+- Roles: ajuste AG, transferência AGC, demais AGCT — espelha a matriz. OK.
+- `search_path = public` fixo; sem `EXECUTE` dinâmico; `REVOKE public` +
+  `GRANT authenticated`. OK. Owner deve ser `postgres` (ver §0).
+- Ator: `auth.jwt()->>'email'` com fallback (forja de autoria eliminada). OK.
+- Custo negativo: rejeitado com mensagem (antes estourava constraint). OK.
+
+## 4. Liberação da FASE 5
+
+Exige §0 + todos os BLOCKED acima virando `PASS — Supabase real`.

@@ -37,6 +37,7 @@ declare
   v_nf numeric;
   v_nr numeric;
   v_disp numeric;
+  v_ator text;
 begin
   if p_tipo not in ('entrada', 'saida', 'ajuste', 'reserva', 'consumo', 'devolucao', 'transferencia') then
     return jsonb_build_object('ok', false, 'error', 'Tipo inválido.');
@@ -44,6 +45,11 @@ begin
   if p_qtd is null or p_qtd <= 0 then
     return jsonb_build_object('ok', false, 'error', 'Quantidade deve ser maior que zero.');
   end if;
+  if p_custo is not null and p_custo < 0 then
+    return jsonb_build_object('ok', false, 'error', 'Custo negativo.');
+  end if;
+  -- Ator derivado da sessão (JWT), nunca do parâmetro (forja de autoria).
+  v_ator := coalesce(nullif(auth.jwt()->>'email', ''), p_executado_por, 'sistema');
 
   select organization_id, estoque_atual, estoque_reservado, estoque_minimo, codigo
     into v_org, v_fis, v_res, v_min, v_codigo
@@ -111,8 +117,8 @@ begin
     insert into public.movimentacoes_estoque
       (organization_id, produto_id, tipo, quantidade, custo_unitario, origem, destino, observacao, executado_por)
     values
-      (v_org, p_produto, 'saida', p_qtd, coalesce(p_custo, 0), p_origem, p_destino, p_obs, p_executado_por),
-      (v_org, p_produto, 'entrada', p_qtd, coalesce(p_custo, 0), p_origem, p_destino, p_obs, p_executado_por);
+      (v_org, p_produto, 'saida', p_qtd, coalesce(p_custo, 0), p_origem, p_destino, p_obs, v_ator),
+      (v_org, p_produto, 'entrada', p_qtd, coalesce(p_custo, 0), p_origem, p_destino, p_obs, v_ator);
     return jsonb_build_object('ok', true, 'fisico', v_fis, 'reservado', v_res, 'codigo', v_codigo, 'minimo', v_min);
   end if;
 
@@ -123,7 +129,7 @@ begin
   insert into public.movimentacoes_estoque
     (organization_id, produto_id, tipo, quantidade, custo_unitario, chamado_id, origem, destino, observacao, executado_por)
   values
-    (v_org, p_produto, p_tipo, p_qtd, coalesce(p_custo, 0), p_chamado, p_origem, p_destino, p_obs, p_executado_por);
+    (v_org, p_produto, p_tipo, p_qtd, coalesce(p_custo, 0), p_chamado, p_origem, p_destino, p_obs, v_ator);
 
   return jsonb_build_object('ok', true, 'fisico', v_nf, 'reservado', v_nr, 'codigo', v_codigo, 'minimo', v_min);
 end;
