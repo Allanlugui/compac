@@ -117,18 +117,13 @@ export interface MovimentarInput {
 }
 
 /**
- * Movimenta estoque em DOIS baldes (gate FASE 3 §7):
- *  - entrada: físico += q
- *  - saida: exige disponível ≥ q; físico −= q
- *  - reserva: exige disponível ≥ q; reservado += q (físico intacto)
- *  - consumo: exige físico ≥ q; físico −= q e abate reserva até zerar
- *  - devolucao: retorna reserva ao disponível (físico intacto)
- *  - ajuste: redefine o FÍSICO para `quantidade` (reservado intacto)
- * Teste-guia: 10 → reserva 3 (fís 10/res 3) → consome 2 (fís 8/res 1).
+ * Movimenta estoque via RPC ATÔMICA (gate FASE 4 S3):
+ * lock de linha no produto serializa operações concorrentes
+ * (A consome 4 de 5; B tentando 4 recebe NEGADO com disp 1).
+ * Auditoria usa os nomes da FASE 4 (S19/S32 do gate).
  */
 export async function movimentarEstoque(input: MovimentarInput): Promise<EstoqueResult> {
   const ctx = await requireOrg();
-  // Ajuste exige permissão própria (define saldo); demais usam movimentar.
   exigirPermissao(ctx, input.tipo === "ajuste" ? "estoque.ajustar" : "estoque.movimentar");
 
   const quantidade = Number(input.quantidade);
@@ -140,88 +135,44 @@ export async function movimentarEstoque(input: MovimentarInput): Promise<Estoque
     return { ok: false, error: "Quantidade deve ser maior que zero." };
   }
 
+  const chamadoId = input.chamadoId.trim() !== "" ? input.chamadoId.trim() : null;
+
   const supabase = await createClient();
-  const { data: produto } = await supabase
-    .from("produtos")
-    .select("id, estoque_atual, estoque_reservado, estoque_minimo, codigo")
-    .eq("id", input.produtoId)
-    .eq("organization_id", ctx.orgId)
-    .maybeSingle();
-  if (!produto) return { ok: false, error: "Produto não encontrado." };
-
-  const fisico = Number((produto as { estoque_atual: number }).estoque_atual ?? 0);
-  const reservado = Number((produto as { estoque_reservado: number }).estoque_reservado ?? 0);
-  const disponivel = fisico - reservado;
-  let novoFisico = fisico;
-  let novoReservado = reservado;
-
-  if (input.tipo === "entrada") {
-    novoFisico = fisico + quantidade;
-  } else if (input.tipo === "ajuste") {
-    if (quantidade < reservado) {
-      return { ok: false, error: `Ajuste abaixo da reserva (${reservado}). Devolva antes.` };
-    }
-    novoFisico = quantidade;
-  } else if (input.tipo === "saida") {
-    if (quantidade > disponivel) {
-      return { ok: false, error: `Disponível insuficiente (disp: ${disponivel}).` };
-    }
-    novoFisico = fisico - quantidade;
-  } else if (input.tipo === "reserva") {
-    if (quantidade > disponivel) {
-      return { ok: false, error: `Disponível insuficiente (disp: ${disponivel}).` };
-    }
-    novoReservado = reservado + quantidade;
-  } else if (input.tipo === "consumo") {
-    if (quantidade > fisico) {
-      return { ok: false, error: `Saldo físico insuficiente (físico: ${fisico}).` };
-    }
-    novoFisico = fisico - quantidade;
-    novoReservado = Math.max(0, reservado - quantidade);
-  } else {
-    // devolucao: libera reserva (nunca abaixo de zero, nunca acima do físico).
-    novoReservado = Math.max(0, reservado - quantidade);
-  }
-
-  let chamadoId: string | null = null;
-  if (input.chamadoId.trim() !== "") {
-    const { data: ch } = await supabase
-      .from("chamados")
-      .select("id")
-      .eq("id", input.chamadoId.trim())
-      .eq("organization_id", ctx.orgId)
-      .maybeSingle();
-    if (!ch) return { ok: false, error: "Chamado vinculado não encontrado." };
-    chamadoId = input.chamadoId.trim();
-  }
-
-  const { error: erroMov } = await supabase.from("movimentacoes_estoque").insert({
-    organization_id: ctx.orgId,
-    produto_id: input.produtoId,
-    tipo: input.tipo,
-    quantidade,
-    custo_unitario: Number(input.custoUnitario) >= 0 ? Number(input.custoUnitario) : 0,
-    chamado_id: chamadoId,
-    observacao: input.observacao.trim() === "" ? null : input.observacao.trim(),
-    executado_por: ctx.email,
+  const { data, error } = await supabase.rpc("movimentar_estoque_atomic", {
+    p_produto: input.produtoId,
+    p_tipo: input.tipo,
+    p_qtd: quantidade,
+    p_custo: Number(input.custoUnitario) >= 0 ? Number(input.custoUnitario) : 0,
+    p_chamado: chamadoId,
+    p_obs: input.observacao.trim() === "" ? null : input.observacao.trim().slice(0, 500),
+    p_origem: null,
+    p_destino: null,
+    p_executado_por: ctx.email,
   });
-  if (erroMov) return { ok: false, error: "Falha ao registrar movimentação." };
+  const r = (data ?? null) as {
+    ok: boolean; error?: string; fisico?: number; reservado?: number;
+    codigo?: string; minimo?: number;
+  } | null;
+  if (error || !r || r.ok !== true) {
+    return { ok: false, error: r?.error ?? "Falha ao registrar movimentacao." };
+  }
 
-  await supabase
-    .from("produtos")
-    .update({ estoque_atual: novoFisico, estoque_reservado: novoReservado })
-    .eq("id", input.produtoId)
-    .eq("organization_id", ctx.orgId);
-
+  const acao =
+    input.tipo === "entrada" ? "STOCK_ENTRY"
+    : input.tipo === "devolucao" ? "STOCK_RELEASED"
+    : input.tipo === "ajuste" ? "STOCK_ADJUSTMENT"
+    : input.tipo === "reserva" ? "STOCK_RESERVED"
+    : input.tipo === "consumo" ? "STOCK_CONSUMED"
+    : "STOCK_EXIT";
   await registrarLog(supabase, {
     tabela: "movimentacoes_estoque",
     registro_id: input.produtoId,
-    acao:
-      input.tipo === "entrada" || input.tipo === "devolucao" ? "STOCK_ENTRY"
-      : input.tipo === "ajuste" ? "STOCK_ADJUSTMENT"
-      : "STOCK_EXIT",
-    dados_anteriores: { fisico, reservado },
-    dados_novos: { tipo: input.tipo, quantidade, novo_fisico: novoFisico, novo_reservado: novoReservado, chamado_id: chamadoId },
+    acao: acao as "STOCK_ENTRY",
+    dados_anteriores: null,
+    dados_novos: {
+      tipo: input.tipo, quantidade,
+      novo_fisico: r.fisico, novo_reservado: r.reservado, chamado_id: chamadoId,
+    },
     executado_por: ctx.email,
     organization_id: ctx.orgId,
     user_id: ctx.userId,
@@ -229,12 +180,12 @@ export async function movimentarEstoque(input: MovimentarInput): Promise<Estoque
 
   revalidar();
   if (chamadoId) revalidatePath(`/admin/chamados/${chamadoId}`);
-  const novoDisponivel = novoFisico - novoReservado;
-  if (novoDisponivel <= Number((produto as { estoque_minimo: number }).estoque_minimo ?? 0)) {
+  const novoDisponível = Number(r.fisico ?? 0) - Number(r.reservado ?? 0);
+  if (novoDisponível <= Number(r.minimo ?? 0)) {
     await notificar({
       tipo: "estoque",
-      titulo: `Estoque crítico: ${(produto as { codigo: string }).codigo}`,
-      descricao: `Disponível ${novoDisponivel} atingiu o mínimo.`,
+      titulo: `Estoque crítico: ${r.codigo ?? "produto"}`,
+      descricao: `Disponível ${novoDisponível} atingiu o mínimo.`,
       link: "/admin/estoque",
     });
   }
@@ -242,8 +193,9 @@ export async function movimentarEstoque(input: MovimentarInput): Promise<Estoque
 }
 
 /**
- * TRANSFERÊNCIA entre locais (§10): par auditado saída+entrada com
- * origem/destino em texto. Rede líquida zero (sem estoque por local).
+ * TRANSFERÊNCIA entre locais (S10): par auditado saida+entrada com
+ * origem/destino em texto, na MESMA transação via RPC (nunca A-3/B+0).
+ * Rede líquida zero (sem estoque por local).
  */
 export async function transferirEstoque(input: {
   produtoId: string;
@@ -257,40 +209,30 @@ export async function transferirEstoque(input: {
   if (!input.produtoId) return { ok: false, error: "Produto inválido." };
   const qtd = Number(input.quantidade);
   if (!Number.isFinite(qtd) || qtd <= 0) return { ok: false, error: "Quantidade inválida." };
-  const origem = input.origem.trim().slice(0, 80);
-  const destino = input.destino.trim().slice(0, 80);
+  const origem = (input.origem ?? "").trim().slice(0, 80);
+  const destino = (input.destino ?? "").trim().slice(0, 80);
   if (origem === "" || destino === "" || origem === destino) {
     return { ok: false, error: "Origem e destino distintos." };
   }
+  const motivo = (input.motivo ?? "").trim().slice(0, 200) || null;
+  const marca = `Transferencia ${origem} -> ${destino}`;
 
   const supabase = await createClient();
-  const { data: produto } = await supabase
-    .from("produtos")
-    .select("id, estoque_atual, estoque_reservado")
-    .eq("id", input.produtoId)
-    .eq("organization_id", ctx.orgId)
-    .maybeSingle();
-  if (!produto) return { ok: false, error: "Produto não encontrado." };
-  const p = produto as { estoque_atual: number; estoque_reservado: number };
-  if (qtd > Number(p.estoque_atual ?? 0) - Number(p.estoque_reservado ?? 0)) {
-    return { ok: false, error: "Disponível insuficiente para transferir." };
+  const { data, error } = await supabase.rpc("movimentar_estoque_atomic", {
+    p_produto: input.produtoId,
+    p_tipo: "transferencia",
+    p_qtd: qtd,
+    p_custo: 0,
+    p_chamado: null,
+    p_obs: motivo ?? marca,
+    p_origem: origem,
+    p_destino: destino,
+    p_executado_por: ctx.email,
+  });
+  const r = (data ?? null) as { ok: boolean; error?: string } | null;
+  if (error || !r || r.ok !== true) {
+    return { ok: false, error: r?.error ?? "Não foi possível transferir." };
   }
-
-  const motivo = (input.motivo ?? "").trim().slice(0, 200) || null;
-  const marca = `Transferência ${origem} → ${destino}`;
-  const { error } = await supabase.from("movimentacoes_estoque").insert([
-    {
-      organization_id: ctx.orgId, produto_id: input.produtoId, tipo: "saida",
-      quantidade: qtd, custo_unitario: 0, origem, destino,
-      observacao: motivo ?? marca, executado_por: ctx.email,
-    },
-    {
-      organization_id: ctx.orgId, produto_id: input.produtoId, tipo: "entrada",
-      quantidade: qtd, custo_unitario: 0, origem, destino,
-      observacao: motivo ?? marca, executado_por: ctx.email,
-    },
-  ]);
-  if (error) return { ok: false, error: "Não foi possível transferir." };
 
   await registrarLog(supabase, {
     tabela: "movimentacoes_estoque", registro_id: input.produtoId, acao: "STOCK_TRANSFERRED",
@@ -301,7 +243,6 @@ export async function transferirEstoque(input: {
   return { ok: true };
 }
 
-/** Atualiza cadastro do produto (editar). */
 export async function atualizarProduto(input: {
   id: string;
   descricao: string;

@@ -255,6 +255,19 @@ export async function registrarRecebimento(input: {
   }[]).map((i) => [i.id, i]));
   if (mapa.size === 0) return { ok: false, error: "Pedido sem itens." };
 
+  // Trava além do pendente (gate FASE 4 S11): soma o já recebido.
+  const { data: jaRec } = await supabase
+    .from("recebimento_itens")
+    .select("pedido_item_id, qtd_recebida, qtd_recusada, recebimento_id, recebimentos!inner(pedido_id)")
+    .eq("recebimentos.pedido_id", input.pedidoId)
+    .eq("organization_id", ctx.orgId);
+  const recebidoAntes = new Map<string, number>();
+  const recusadoAntes = new Map<string, number>();
+  for (const r of ((jaRec ?? []) as { pedido_item_id: string; qtd_recebida: number; qtd_recusada: number }[])) {
+    recebidoAntes.set(r.pedido_item_id, (recebidoAntes.get(r.pedido_item_id) ?? 0) + Number(r.qtd_recebida ?? 0));
+    recusadoAntes.set(r.pedido_item_id, (recusadoAntes.get(r.pedido_item_id) ?? 0) + Number(r.qtd_recusada ?? 0));
+  }
+
   let totalRecusada = 0;
   for (const l of linhas) {
     const item = mapa.get(l.pedido_item_id);
@@ -266,6 +279,12 @@ export async function registrarRecebimento(input: {
     }
     if (rec + rej > Number(item.quantidade)) {
       return { ok: false, error: `Recebido+recusado excede o pedido: ${item.descricao}.` };
+    }
+    const pendenteItem = Number(item.quantidade)
+      - (recebidoAntes.get(l.pedido_item_id) ?? 0)
+      - (recusadoAntes.get(l.pedido_item_id) ?? 0);
+    if (rec + rej > pendenteItem) {
+      return { ok: false, error: `Além do pendente (${pendenteItem}): ${item.descricao}.` };
     }
     totalRecusada += rej;
   }
