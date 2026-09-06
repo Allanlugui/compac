@@ -14,7 +14,7 @@ export default async function EstoquePage() {
   const supabase = await createClient();
   const ctx = await requireOrg();
 
-  const [{ data: prods }, { data: movs }] = await Promise.all([
+  const [{ data: prods }, { data: movs }, { data: unis }, { data: cats }, { data: forns }] = await Promise.all([
     supabase
       .from("produtos")
       .select("*")
@@ -25,6 +25,26 @@ export default async function EstoquePage() {
       .select("*, produtos!inner(codigo, descricao)")
       .eq("organization_id", ctx.orgId)
       .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("unidades_medida")
+      .select("sigla, nome")
+      .eq("organization_id", ctx.orgId)
+      .eq("ativa", true)
+      .order("sigla"),
+    supabase
+      .from("categorias")
+      .select("id, nome")
+      .eq("organization_id", ctx.orgId)
+      .eq("tipo", "produto")
+      .eq("ativa", true)
+      .order("nome"),
+    supabase
+      .from("fornecedores")
+      .select("id, nome")
+      .eq("organization_id", ctx.orgId)
+      .eq("ativo", true)
+      .order("nome")
       .limit(200),
   ]);
 
@@ -53,7 +73,13 @@ export default async function EstoquePage() {
         <StatCard rotulo="Movimentações" valor={movimentacoes.length} detalhe="últimas 200" Icone={Package} tom="sky" />
         <StatCard rotulo="Valor estimado" valor={formatarMoeda(valor)} Icone={Package} tom="amber" />
       </div>
-      <EstoqueClient produtos={produtos} movimentacoes={movimentacoes} />
+      <EstoqueClient
+        produtos={produtos}
+        movimentacoes={movimentacoes}
+        unidades={(unis ?? []) as { sigla: string; nome: string }[]}
+        categorias={(cats ?? []) as { id: string; nome: string }[]}
+        fornecedores={(forns ?? []) as { id: string; nome: string }[]}
+      />
     </div>
   );
 }

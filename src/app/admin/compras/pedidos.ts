@@ -38,7 +38,7 @@ export async function atualizarStatusPedido(input: {
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "compras.escrever");
+  exigirPermissao(ctx, "compras.aprovar");
 
   const { data: atual } = await supabase
     .from("solicitacoes_compra")
@@ -118,7 +118,7 @@ export async function efetivarPedido(
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "compras.escrever");
+  exigirPermissao(ctx, "compras.aprovar");
 
   const { data: pedido } = await supabase
     .from("solicitacoes_compra")

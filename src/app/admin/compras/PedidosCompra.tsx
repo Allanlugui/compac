@@ -34,6 +34,56 @@ const BADGE: Record<
   SolicitacaoCompraStatus,
   { rotulo: string; classes: string; Icone: (p: { className?: string }) => React.ReactNode }
 > = {
+  rascunho: {
+    rotulo: "Rascunho",
+    classes: "bg-zinc-100 text-zinc-600 ring-zinc-200",
+    Icone: Clock,
+  },
+  enviada: {
+    rotulo: "Enviada",
+    classes: "bg-sky-100 text-sky-800 ring-sky-200",
+    Icone: Clock,
+  },
+  em_analise: {
+    rotulo: "Em análise",
+    classes: "bg-yellow-100 text-yellow-800 ring-yellow-200",
+    Icone: Clock,
+  },
+  aprovada: {
+    rotulo: "Aprovada",
+    classes: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+    Icone: BadgeCheck,
+  },
+  rejeitada: {
+    rotulo: "Rejeitada",
+    classes: "bg-red-100 text-red-800 ring-red-200",
+    Icone: CircleX,
+  },
+  em_cotacao: {
+    rotulo: "Em cotação",
+    classes: "bg-violet-100 text-violet-800 ring-violet-200",
+    Icone: ShoppingCart,
+  },
+  pedido_gerado: {
+    rotulo: "Pedido gerado",
+    classes: "bg-indigo-100 text-indigo-800 ring-indigo-200",
+    Icone: PackageCheck,
+  },
+  recebida: {
+    rotulo: "Recebida",
+    classes: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+    Icone: PackageCheck,
+  },
+  encerrada: {
+    rotulo: "Encerrada",
+    classes: "bg-zinc-200 text-zinc-500 ring-zinc-300",
+    Icone: Check,
+  },
+  cancelada: {
+    rotulo: "Cancelada",
+    classes: "bg-zinc-200 text-zinc-500 ring-zinc-300",
+    Icone: X,
+  },
   pendente: {
     rotulo: "Pendente",
     classes: "bg-amber-100 text-amber-800 ring-amber-200",
@@ -182,6 +232,16 @@ export default function PedidosCompra({
   const contagem = useMemo(() => {
     const mapa: Record<Filtro, number> = {
       todas: pedidos.length,
+      rascunho: 0,
+      enviada: 0,
+      em_analise: 0,
+      aprovada: 0,
+      rejeitada: 0,
+      em_cotacao: 0,
+      pedido_gerado: 0,
+      recebida: 0,
+      encerrada: 0,
+      cancelada: 0,
       pendente: 0,
       aprovado: 0,
       rejeitado: 0,

@@ -29,6 +29,56 @@ const STATUS: Record<
   SolicitacaoCompraStatus,
   { rotulo: string; classes: string; Icone: (p: { className?: string }) => React.ReactNode }
 > = {
+  rascunho: {
+    rotulo: "Rascunho",
+    classes: "bg-zinc-100 text-zinc-600 ring-zinc-200",
+    Icone: Clock,
+  },
+  enviada: {
+    rotulo: "Enviada",
+    classes: "bg-sky-100 text-sky-800 ring-sky-200",
+    Icone: Clock,
+  },
+  em_analise: {
+    rotulo: "Em análise",
+    classes: "bg-yellow-100 text-yellow-800 ring-yellow-200",
+    Icone: Clock,
+  },
+  aprovada: {
+    rotulo: "Aprovado",
+    classes: "bg-sky-100 text-sky-800 ring-sky-200",
+    Icone: BadgeCheck,
+  },
+  rejeitada: {
+    rotulo: "Rejeitado",
+    classes: "bg-red-100 text-red-800 ring-red-200",
+    Icone: CircleX,
+  },
+  em_cotacao: {
+    rotulo: "Em cotação",
+    classes: "bg-violet-100 text-violet-800 ring-violet-200",
+    Icone: Clock,
+  },
+  pedido_gerado: {
+    rotulo: "Pedido gerado",
+    classes: "bg-indigo-100 text-indigo-800 ring-indigo-200",
+    Icone: PackageCheck,
+  },
+  recebida: {
+    rotulo: "Recebido",
+    classes: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+    Icone: PackageCheck,
+  },
+  encerrada: {
+    rotulo: "Encerrada",
+    classes: "bg-zinc-200 text-zinc-500 ring-zinc-300",
+    Icone: PackageCheck,
+  },
+  cancelada: {
+    rotulo: "Cancelada",
+    classes: "bg-zinc-200 text-zinc-500 ring-zinc-300",
+    Icone: CircleX,
+  },
   pendente: {
     rotulo: "Pendente",
     classes: "bg-amber-100 text-amber-800 ring-amber-200",
@@ -82,8 +132,12 @@ export default async function QrCompraPage({ params, searchParams }: QrCompraPag
         <div className="mx-auto w-full max-w-md">
           <p className="mb-3 rounded-xl bg-emerald-50 px-4 py-2 text-center text-sm font-semibold text-emerald-800 ring-1 ring-emerald-200">
             Solicitando para {org.nome}
+            {org.contexto ? ` · ${org.contexto.nome}` : ""}
           </p>
-          <SolicitacaoForm tokenOrg={typeof t === "string" ? t : ""} />
+          <SolicitacaoForm
+            tokenOrg={typeof t === "string" ? t : ""}
+            contextoSetor={org.contexto?.setor ?? null}
+          />
           <p className="mt-4 text-center text-xs text-zinc-400">
             SGA-M · Solicitação de compras
           </p>

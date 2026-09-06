@@ -5,7 +5,7 @@ import type { Role } from "./types";
  * Matriz granular de permissões (FASE 1, §25 do plano).
  *
  * Eixo 1 — módulo; eixo 2 — ação. Ex.:
- *   TECNICO → chamados.executar ✓ · compras.escrever ✗ · usuarios.administrar ✗
+ *   TECNICO → chamados.executar ✓ · compras.criar ✗ · usuarios.administrar ✗
  *
  * Comportamento idêntico ao `exigirPapel` anterior (migração mecânica);
  * a granularidade nova aparece onde faz sentido (estrutura, auditoria).
@@ -37,10 +37,23 @@ export const PERMISSOES = {
   "preventiva.criar": ["ADMIN", "GESTOR"],
   "preventiva.editar": ["ADMIN", "GESTOR"],
   "preventiva.executar": ["ADMIN", "GESTOR"],
-  "compras.escrever": ["ADMIN", "GESTOR", "COMPRAS"],
-  "estoque.escrever": ["ADMIN", "GESTOR", "COMPRAS"],
+  "compras.ver": ["ADMIN", "GESTOR", "COMPRAS", "AUDITOR"],
   "estoque.movimentar": ["ADMIN", "GESTOR", "COMPRAS", "TECNICO"],
-  "fornecedores.escrever": ["ADMIN", "GESTOR", "COMPRAS"],
+  "estoque.ver": ["ADMIN", "GESTOR", "COMPRAS", "TECNICO", "AUDITOR"],
+  "estoque.criar": ["ADMIN", "GESTOR", "COMPRAS"],
+  "estoque.editar": ["ADMIN", "GESTOR", "COMPRAS"],
+  "estoque.ajustar": ["ADMIN", "GESTOR"],
+  "estoque.transferir": ["ADMIN", "GESTOR", "COMPRAS"],
+  "fornecedores.ver": ["ADMIN", "GESTOR", "COMPRAS", "TECNICO", "AUDITOR"],
+  "fornecedores.criar": ["ADMIN", "GESTOR", "COMPRAS"],
+  "fornecedores.editar": ["ADMIN", "GESTOR", "COMPRAS"],
+  "compras.criar": ["ADMIN", "GESTOR", "COMPRAS"],
+  "compras.aprovar": ["ADMIN", "GESTOR"],
+  "compras.cotar": ["ADMIN", "GESTOR", "COMPRAS"],
+  "compras.receber": ["ADMIN", "GESTOR", "COMPRAS"],
+  "solicitacoes.ver": ["ADMIN", "GESTOR", "COMPRAS", "TECNICO", "AUDITOR", "SOLICITANTE"],
+  "solicitacoes.criar": ["ADMIN", "GESTOR", "COMPRAS", "TECNICO", "SOLICITANTE"],
+  "solicitacoes.aprovar": ["ADMIN", "GESTOR"],
   "checklists.escrever": ["ADMIN", "GESTOR", "TECNICO"],
 } as const satisfies Record<string, readonly Role[]>;
 

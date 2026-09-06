@@ -98,7 +98,7 @@ export async function criarCompra(input: CompraInput): Promise<CompraResult> {
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "compras.escrever");
+  exigirPermissao(ctx, "compras.criar");
 
   if (dados.chamadoId && !(await chamadoExiste(supabase, dados.chamadoId, ctx.orgId))) {
     return { ok: false, error: "Chamado vinculado não encontrado." };
@@ -156,7 +156,7 @@ export async function atualizarCompra(
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "compras.escrever");
+  exigirPermissao(ctx, "compras.criar");
 
   const { data: anterior } = await supabase
     .from("compras")
@@ -200,7 +200,7 @@ export async function excluirCompra(input: { id: string }): Promise<CompraResult
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "compras.escrever");
+  exigirPermissao(ctx, "compras.criar");
 
   const { data: anterior } = await supabase
     .from("compras")

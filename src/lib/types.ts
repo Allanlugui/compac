@@ -201,15 +201,30 @@ export interface ChamadoComAtivo extends Chamado {
 }
 
 /**
- * SGA-M v2.0 (Fase 1) — tipos da expansão (espelham `schema_v2.sql`).
- * Fase 3 consome SolicitacaoCompra (aprovações); Fase 4 consome AuditoriaLog.
+ * FASE 4 (schema_v11): suprimentos — solicitações, cotações, pedidos,
+ * recebimentos, unidades, vínculo produto×fornecedor, QR contextos.
+ * Tudo com organization_id (multi-tenant + RLS).
  */
 
-export type SolicitacaoCompraStatus =
+export type StatusSolicitacao =
+  | "rascunho"
+  | "enviada"
+  | "em_analise"
+  | "aprovada"
+  | "rejeitada"
+  | "em_cotacao"
+  | "pedido_gerado"
+  | "recebida"
+  | "encerrada"
+  | "cancelada"
+  // Legados (fluxo antigo) — tratados no mapa de transição.
   | "pendente"
   | "aprovado"
   | "rejeitado"
   | "comprado";
+
+/** Alias de compatibilidade (fluxo antigo). */
+export type SolicitacaoCompraStatus = StatusSolicitacao;
 
 export interface SolicitacaoCompra {
   id: string;
@@ -219,10 +234,162 @@ export interface SolicitacaoCompra {
   justificativa: string;
   quantidade: number;
   valor_estimado: number;
-  status: SolicitacaoCompraStatus;
+  status: StatusSolicitacao;
   qr_code_hash: string;
   created_at: string;
   updated_at: string;
+}
+
+/** Solicitação estendida (FASE 4; campos base acima preservados). */
+export interface SolicitacaoCompleta extends SolicitacaoCompra {
+  organization_id: string;
+  origem: "qr" | "portal" | "estoque" | "manual" | null;
+  prioridade: "baixa" | "media" | "alta" | "critica" | null;
+  centro_custo: string | null;
+  prazo: string | null;
+  created_by: string | null;
+  aprovado_por: string | null;
+  aprovado_em: string | null;
+  decisao_obs: string | null;
+}
+
+export interface SolicitacaoItem {
+  id: string;
+  organization_id: string;
+  solicitacao_id: string;
+  produto_id: string | null;
+  descricao: string;
+  quantidade: number;
+  unidade: string;
+  justificativa: string | null;
+  urgencia: "baixa" | "normal" | "alta" | "critica";
+  observacao: string | null;
+  created_at: string;
+}
+
+export interface SolicitacaoHistorico {
+  id: string;
+  organization_id: string;
+  solicitacao_id: string;
+  de: string | null;
+  para: string;
+  motivo: string | null;
+  user_id: string | null;
+  executado_por: string | null;
+  created_at: string;
+}
+
+export interface SolicitacaoAnexo {
+  id: string;
+  organization_id: string;
+  solicitacao_id: string;
+  nome: string;
+  path: string;
+  tamanho_bytes: number;
+  mime: string | null;
+  created_at: string;
+}
+
+export interface Cotacao {
+  id: string;
+  organization_id: string;
+  solicitacao_id: string;
+  fornecedor_id: string;
+  valor: number;
+  prazo_dias: number | null;
+  condicoes: string | null;
+  observacoes: string | null;
+  vencedora: boolean;
+  created_at: string;
+}
+
+export type StatusPedido = "aberto" | "aprovado" | "recebido" | "encerrado" | "cancelado";
+
+export interface PedidoCompra {
+  id: string;
+  organization_id: string;
+  solicitacao_id: string | null;
+  fornecedor_id: string;
+  numero: string;
+  status: StatusPedido;
+  frete: number;
+  desconto: number;
+  impostos: number;
+  prazo: string | null;
+  centro_custo: string | null;
+  comprador: string | null;
+  observacao: string | null;
+  created_at: string;
+}
+
+export interface PedidoItem {
+  id: string;
+  organization_id: string;
+  pedido_id: string;
+  produto_id: string | null;
+  descricao: string;
+  quantidade: number;
+  unidade: string;
+  preco_unitario: number;
+  created_at: string;
+}
+
+export interface Recebimento {
+  id: string;
+  organization_id: string;
+  pedido_id: string;
+  status: "aceito" | "divergente";
+  lote: string | null;
+  validade: string | null;
+  motivo_divergencia: string | null;
+  foto_path: string | null;
+  recebido_por: string | null;
+  created_at: string;
+}
+
+export interface RecebimentoItem {
+  id: string;
+  organization_id: string;
+  recebimento_id: string;
+  pedido_item_id: string;
+  qtd_recebida: number;
+  qtd_recusada: number;
+  motivo: string | null;
+  created_at: string;
+}
+
+export interface UnidadeMedida {
+  id: string;
+  organization_id: string;
+  sigla: string;
+  nome: string;
+  ativa: boolean;
+  created_at: string;
+}
+
+export interface ProdutoFornecedor {
+  id: string;
+  organization_id: string;
+  produto_id: string;
+  fornecedor_id: string;
+  principal: boolean;
+  preco_ref: number | null;
+  prazo_medio_dias: number | null;
+  created_at: string;
+}
+
+export interface QrContexto {
+  id: string;
+  organization_id: string;
+  nome: string;
+  unidade: string | null;
+  setor: string | null;
+  area: string | null;
+  almoxarifado: string | null;
+  centro_custo: string | null;
+  token: string;
+  ativo: boolean;
+  created_at: string;
 }
 
 export type AuditoriaAcao =
@@ -244,7 +411,20 @@ export type AuditoriaAcao =
   | "OS_CONCLUIDA"
   | "CHECKLIST_CONCLUIDA"
   | "FOTO_ADICIONADA"
-  | "COST_ADDED";
+  | "COST_ADDED"
+  | "STOCK_RESERVED"
+  | "STOCK_RELEASED"
+  | "STOCK_CONSUMED"
+  | "STOCK_TRANSFERRED"
+  | "REQUEST_CREATED"
+  | "REQUEST_APPROVED"
+  | "REQUEST_REJECTED"
+  | "QUOTE_CREATED"
+  | "ORDER_CREATED"
+  | "ORDER_APPROVED"
+  | "RECEIPT_CREATED"
+  | "RECEIPT_ACCEPTED"
+  | "RECEIPT_REJECTED";
 
 export interface AuditoriaLog {
   id: string;
@@ -302,6 +482,15 @@ export interface Fornecedor {
   avaliacao: number | null;
   ativo: boolean;
   created_at: string;
+  /** FASE 4 (schema_v11): cadastro completo. */
+  razao_social: string | null;
+  nome_fantasia: string | null;
+  ie: string | null;
+  site: string | null;
+  cidade: string | null;
+  estado: string | null;
+  cep: string | null;
+  observacoes: string | null;
 }
 
 export interface Produto {
@@ -321,6 +510,12 @@ export interface Produto {
   custo_medio: number;
   ativo: boolean;
   created_at: string;
+  /** FASE 4 (schema_v11): cadastro completo. */
+  sku: string | null;
+  subcategoria: string | null;
+  ponto_reposicao: number;
+  ultimo_custo: number;
+  codigo_fornecedor: string | null;
   /** FASE 1 (schema_v6): categoria estruturada — convive com `categoria` texto. */
   categoria_id: string | null;
 }

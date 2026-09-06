@@ -41,6 +41,19 @@ const CLASSE_ACAO: Record<AuditoriaAcao, string> = {
   CHECKLIST_CONCLUIDA: "bg-sky-100 text-sky-800 ring-sky-200",
   FOTO_ADICIONADA: "bg-zinc-200 text-zinc-700 ring-zinc-300",
   COST_ADDED: "bg-amber-100 text-amber-800 ring-amber-200",
+  STOCK_RESERVED: "bg-violet-100 text-violet-800 ring-violet-200",
+  STOCK_RELEASED: "bg-zinc-200 text-zinc-700 ring-zinc-300",
+  STOCK_CONSUMED: "bg-orange-100 text-orange-800 ring-orange-200",
+  STOCK_TRANSFERRED: "bg-sky-100 text-sky-800 ring-sky-200",
+  REQUEST_CREATED: "bg-sky-100 text-sky-800 ring-sky-200",
+  REQUEST_APPROVED: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+  REQUEST_REJECTED: "bg-red-100 text-red-800 ring-red-200",
+  QUOTE_CREATED: "bg-violet-100 text-violet-800 ring-violet-200",
+  ORDER_CREATED: "bg-indigo-100 text-indigo-800 ring-indigo-200",
+  ORDER_APPROVED: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+  RECEIPT_CREATED: "bg-amber-100 text-amber-800 ring-amber-200",
+  RECEIPT_ACCEPTED: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+  RECEIPT_REJECTED: "bg-red-100 text-red-800 ring-red-200",
 };
 
 const ROTULO_ACAO: Record<AuditoriaAcao, string> = {
@@ -63,6 +76,19 @@ const ROTULO_ACAO: Record<AuditoriaAcao, string> = {
   CHECKLIST_CONCLUIDA: "Checklist",
   FOTO_ADICIONADA: "Foto",
   COST_ADDED: "Custo",
+  STOCK_RESERVED: "Reserva",
+  STOCK_RELEASED: "Liberação",
+  STOCK_CONSUMED: "Consumo",
+  STOCK_TRANSFERRED: "Transfer.",
+  REQUEST_CREATED: "Solicitação",
+  REQUEST_APPROVED: "Aprovação",
+  REQUEST_REJECTED: "Rejeição",
+  QUOTE_CREATED: "Cotação",
+  ORDER_CREATED: "Pedido",
+  ORDER_APPROVED: "Ped. aprov.",
+  RECEIPT_CREATED: "Recebim.",
+  RECEIPT_ACCEPTED: "Aceito",
+  RECEIPT_REJECTED: "Divergente",
 };
 
 /** Link contextual para o registro afetado, quando houver tela correspondente. */

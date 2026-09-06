@@ -92,8 +92,15 @@ export const SECOES_NAV: SecaoNav[] = [
         href: "/admin/compras",
         rotulo: "Compras",
         Icone: ShoppingCart,
-        ativoEm: (p) => p.startsWith("/admin/compras"),
+        ativoEm: (p) => p.startsWith("/admin/compras") && !p.startsWith("/admin/compras/solicitacoes") && !p.startsWith("/admin/compras/pedidos"),
         papeis: SUPRIMENTOS,
+      },
+      {
+        href: "/admin/compras/solicitacoes",
+        rotulo: "Solicitações",
+        Icone: ClipboardCheck,
+        ativoEm: (p) => p.startsWith("/admin/compras/solicitacoes") || p.startsWith("/admin/compras/pedidos"),
+        papeis: ["ADMIN", "GESTOR", "COMPRAS", "TECNICO", "AUDITOR", "SOLICITANTE"],
       },
       {
         href: "/admin/fornecedores",

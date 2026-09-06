@@ -264,7 +264,7 @@ export async function registrarCompra(
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "compras.escrever");
+  exigirPermissao(ctx, "compras.criar");
 
   const { data: chamado } = await supabase
     .from("chamados")
@@ -812,9 +812,9 @@ export async function registrarServico(input: {
   nota?: string;
   data_servico?: string;
   observacao?: string;
-}): Promise<AcaoResult> {
+  }): Promise<AcaoResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "compras.escrever");
+  exigirPermissao(ctx, "compras.criar");
   if (!input.chamadoId) return { ok: false, error: "O.S. inválida." };
   const servico = input.servico.trim();
   if (servico.length < 2 || servico.length > 200) {

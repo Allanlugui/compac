@@ -23,8 +23,15 @@ function hojeLabel(): string {
   });
 }
 
-export default function SolicitacaoForm({ tokenOrg }: { tokenOrg: string }) {
-  const [setor, setSetor] = useState("");
+export default function SolicitacaoForm({
+  tokenOrg,
+  contextoSetor = null,
+}: {
+  tokenOrg: string;
+  /** Setor vindo do QR por contexto (não redigitado). */
+  contextoSetor?: string | null;
+}) {
+  const [setor, setSetor] = useState(contextoSetor ?? "");
   const [solicitante, setSolicitante] = useState("");
   const [item, setItem] = useState("");
   const [quantidade, setQuantidade] = useState("1");
@@ -85,7 +92,7 @@ export default function SolicitacaoForm({ tokenOrg }: { tokenOrg: string }) {
   function nova() {
     setHash(null);
     setErro(null);
-    setSetor("");
+    setSetor(contextoSetor ?? "");
     setSolicitante("");
     setItem("");
     setQuantidade("1");
@@ -181,9 +188,12 @@ export default function SolicitacaoForm({ tokenOrg }: { tokenOrg: string }) {
               placeholder="Ex.: Elétrica"
               value={setor}
               onChange={(e) => setSetor(e.target.value)}
-              disabled={enviando}
+              disabled={enviando || !!contextoSetor}
               className={campo}
             />
+            {contextoSetor && (
+              <p className="mt-1 text-xs text-zinc-400">Preenchido pelo QR — sem redigitar.</p>
+            )}
           </div>
           <div>
             <label

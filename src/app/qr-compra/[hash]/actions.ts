@@ -58,15 +58,33 @@ export async function criarSolicitacao(
   }
 
   const svc = createServiceClient();
+  // Token pode ser da org (genérico) ou de um contexto (unidade/setor).
+  let orgId: string | null = null;
   const { data: org } = await svc
     .from("organizations")
     .select("id, nome")
     .eq("entry_token", input.tokenOrg)
     .maybeSingle();
-  if (!org) {
+  if (org) {
+    orgId = org.id as string;
+  } else {
+    const { data: context } = await svc
+      .from("qr_contextos")
+      .select("organization_id, organizations!inner(nome)")
+      .eq("token", input.tokenOrg)
+      .eq("ativo", true)
+      .maybeSingle();
+    const c = context as unknown as {
+      organization_id: string;
+      organizations: { nome: string };
+    } | null;
+    if (c) {
+      orgId = c.organization_id;
+    }
+  }
+  if (!orgId) {
     return { ok: false, error: "Código de entrada inválido. Use o QR da sua unidade." };
   }
-  const orgId = org.id as string;
 
   const supabase = await createClient();
   for (let tentativa = 0; tentativa < 5; tentativa++) {
@@ -97,6 +115,17 @@ export async function criarSolicitacao(
     }
 
     const id = data.id as string;
+    // Item espelhado na tabela de itens (detalhe interno lista itens).
+    await svc.from("solicitacao_itens").insert({
+      organization_id: orgId,
+      solicitacao_id: id,
+      produto_id: null,
+      descricao: item,
+      quantidade,
+      unidade: "UN",
+      justificativa,
+      urgencia: "normal",
+    });
     await svc.from("auditoria_logs").insert({
       tabela: "solicitacoes_compra",
       registro_id: id,
@@ -113,17 +142,36 @@ export async function criarSolicitacao(
   return { ok: false, error: "Tente novamente em instantes." };
 }
 
-/** Nome público da org para exibir no formulário (sem listar tenants). */
+/** Nome público da org + contexto (sem listar tenants). */
 export async function resolverOrgToken(
   token: string,
-): Promise<{ ok: true; nome: string } | { ok: false }> {
+): Promise<
+  | { ok: true; nome: string; contexto: null }
+  | { ok: true; nome: string; contexto: { nome: string; setor: string | null; centro_custo: string | null } }
+  | { ok: false }
+> {
   if (!token || token.length < 16) return { ok: false };
   const svc = createServiceClient();
-  const { data } = await svc
+  const { data: org } = await svc
     .from("organizations")
     .select("nome")
     .eq("entry_token", token)
     .maybeSingle();
-  if (!data) return { ok: false };
-  return { ok: true, nome: data.nome as string };
+  if (org) return { ok: true, nome: org.nome as string, contexto: null };
+  const { data: context } = await svc
+    .from("qr_contextos")
+    .select("nome, setor, centro_custo, organization_id, organizations!inner(nome)")
+    .eq("token", token)
+    .eq("ativo", true)
+    .maybeSingle();
+  const c = context as unknown as {
+    nome: string; setor: string | null; centro_custo: string | null;
+    organizations: { nome: string };
+  } | null;
+  if (!c) return { ok: false };
+  return {
+    ok: true,
+    nome: c.organizations.nome,
+    contexto: { nome: c.nome, setor: c.setor, centro_custo: c.centro_custo },
+  };
 }
