@@ -1,300 +1,335 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import {
-  ArrowRight,
-  CalendarDays,
-  CircleCheck,
-  ClipboardList,
-  Hourglass,
-  Ticket,
-  User,
-} from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import type { ChamadoStatus, ImpactoOperacional, OsStatus } from "@/lib/types";
-import { formatarDataHora } from "@/lib/format";
-import { cn } from "@/lib/utils";
-import StatusBadge, { OsStatusBadge } from "@/app/admin/_components/StatusBadge";
-import ImpactoBadge, { IMPACTOS } from "@/app/admin/_components/ImpactoBadge";
 import PageHeader from "@/components/ui/PageHeader";
-import StatCard, { type Tom } from "@/components/ui/StatCard";
-import EmptyState from "@/components/ui/EmptyState";
+import { formatarMoeda, formatarDuracaoMedia } from "@/lib/format";
+import type { PeriodoId } from "@/lib/analytics/types";
+import {
+  queryAtivosCriticos,
+  queryAtivosPorStatus,
+  queryBacklogDemanda,
+  queryBacklogOS,
+  queryConsumoPorProduto,
+  queryCustoTotal,
+  queryDisponibilidade,
+  queryEstoqueResumo,
+  queryMTTR,
+  queryMTBF,
+  queryOSAbetas,
+  querySLA,
+  querySolicitacoesPendentes,
+  queryTempoExecucao,
+  queryTopAtivos,
+  queryTopAtivosPorCusto,
+  queryTopAtivosPorReincidencia,
+  queryTotalAtivos,
+} from "@/lib/analytics/queries";
 
-export const metadata: Metadata = {
-  title: "Dashboard · SGA-M",
-  description: "Painel de chamados de manutenção por status.",
-};
+export const metadata: Metadata = { title: "Dashboard Executivo · SGA-M" };
 
-const ABAS = [
-  { id: "todos", rotulo: "Todos" },
-  { id: "novos", rotulo: "Novos" },
-  { id: "em_os", rotulo: "Em O.S." },
-  { id: "concluidos", rotulo: "Concluídos" },
-  { id: "cancelados", rotulo: "Cancelados" },
-] as const;
+const PERIODOS: { id: PeriodoId; rotulo: string }[] = [
+  { id: "7d", rotulo: "7 dias" },
+  { id: "30d", rotulo: "30 dias" },
+  { id: "90d", rotulo: "90 dias" },
+  { id: "12m", rotulo: "12 meses" },
+];
 
-type AbaId = (typeof ABAS)[number]["id"];
-
-const STATUS_NOVOS: ChamadoStatus[] = ["aberto", "em_triagem", "aguardando_informacao"];
-const STATUS_OS: ChamadoStatus[] = ["convertido_os", "em_andamento"];
-const STATUS_OK: ChamadoStatus[] = ["resolvido", "concluido"];
-
-/** Acento lateral do card por grupo de status. */
-const ACENTO_STATUS: Record<ChamadoStatus, string> = {
-  aberto: "bg-amber-400",
-  em_triagem: "bg-yellow-400",
-  aguardando_informacao: "bg-orange-400",
-  convertido_os: "bg-sky-400",
-  resolvido: "bg-emerald-400",
-  cancelado: "bg-zinc-300",
-  em_andamento: "bg-sky-400",
-  concluido: "bg-emerald-400",
-};
-
-interface DashboardProps {
-  searchParams: Promise<{ status?: string; impacto?: string }>;
+function Card({
+  titulo,
+  valor,
+  sub,
+  href,
+  estado,
+}: {
+  titulo: string;
+  valor: React.ReactNode;
+  sub?: React.ReactNode;
+  href?: string;
+  estado?: "ok" | "empty" | "insufficient_data" | "no_deadline" | "error";
+}) {
+  const inner = (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">{titulo}</p>
+      <div className="mt-2">
+        {estado === "insufficient_data" ? (
+          <p className="text-sm font-medium text-amber-700">Dados insuficientes</p>
+        ) : estado === "empty" ? (
+          <p className="text-sm text-zinc-500">Nenhum dado no período</p>
+        ) : estado === "no_deadline" ? (
+          <p className="text-sm text-zinc-500">Sem prazo</p>
+        ) : estado === "error" ? (
+          <p className="text-sm text-red-600">Erro ao carregar</p>
+        ) : (
+          <p className="text-2xl font-black tabular-nums">{valor}</p>
+        )}
+      </div>
+      {sub && <p className="mt-1 text-xs text-zinc-500">{sub}</p>}
+    </div>
+  );
+  if (href) {
+    return (
+      <Link href={href} className="block transition hover:shadow-md">
+        {inner}
+      </Link>
+    );
+  }
+  return inner;
 }
 
-/** Linha resumida do dashboard (subset do SELECT + join com ativos). */
-interface ChamadoResumo {
-  id: string;
-  solicitante: string;
-  descricao: string;
-  status: ChamadoStatus;
-  impacto: ImpactoOperacional | null;
-  os_status: OsStatus | null;
-  created_at: string;
-  ativos: { nome: string } | { nome: string }[] | null;
+function BarList({
+  titulo,
+  itens,
+  hrefBase,
+}: {
+  titulo: string;
+  itens: [string, number][];
+  hrefBase?: string;
+}) {
+  if (itens.length === 0) {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">{titulo}</p>
+        <p className="mt-2 text-sm text-zinc-500">Sem dados suficientes</p>
+      </div>
+    );
+  }
+  const max = Math.max(...itens.map(([, v]) => v), 1);
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">{titulo}</p>
+      <ul className="mt-3 space-y-2">
+        {itens.map(([id, qtd]) => (
+          <li key={id} className="flex items-center gap-3">
+            <span className="w-24 truncate font-mono text-xs font-bold" title={id}>
+              {id.slice(0, 8)}
+            </span>
+            <div className="flex-1">
+              <div className="h-2 rounded-full bg-zinc-100">
+                <div className="h-2 rounded-full bg-zinc-900" style={{ width: `${(qtd / max) * 100}%` }} />
+              </div>
+            </div>
+            <span className="w-10 text-right text-xs font-bold tabular-nums">{qtd}</span>
+            {hrefBase && (
+              <Link href={`${hrefBase}?ativo=${id}`} className="text-xs font-bold text-zinc-600 underline-offset-2 hover:underline">
+                Ver
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
-/** O join pode vir como objeto (to-one) — normaliza com segurança. */
-function nomeDoAtivo(ativos: ChamadoResumo["ativos"]): string {
-  if (!ativos) return "Ativo removido";
-  if (Array.isArray(ativos)) return ativos[0]?.nome ?? "Ativo removido";
-  return ativos.nome;
-}
-
-export default async function DashboardPage({ searchParams }: DashboardProps) {
-  const { status, impacto } = await searchParams;
-  const aba: AbaId =
-    status === "novos" || status === "em_os" || status === "concluidos" || status === "cancelados"
-      ? status
-      : "todos";
-  const filtroImpacto: ImpactoOperacional | null =
-    impacto === "baixo" ||
-    impacto === "medio" ||
-    impacto === "alto" ||
-    impacto === "critico" ||
-    impacto === "parada_total"
-      ? impacto
-      : null;
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ periodo?: string; inicio?: string; fim?: string }>;
+}) {
+  const sp = await searchParams;
+  const periodo = (
+    sp.periodo === "7d" || sp.periodo === "30d" || sp.periodo === "90d" || sp.periodo === "12m" || sp.periodo === "hoje"
+      ? sp.periodo
+      : "30d"
+  ) as PeriodoId;
+  const personalizado =
+    sp.inicio && sp.fim ? { inicio: sp.inicio, fim: sp.fim } : undefined;
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  const { data } = await supabase
-    .from("chamados")
-    .select("id, solicitante, descricao, status, impacto, os_status, created_at, ativo_id, ativos(id, nome, localizacao)")
-    .eq("organization_id", ctx.orgId)
-    .order("created_at", { ascending: false });
 
-  const chamados = (data ?? []) as unknown as ChamadoResumo[];
+  const qctx = { supabase, orgId: ctx.orgId, periodo, personalizado };
 
-  const emGrupo = (c: ChamadoResumo, grupo: AbaId): boolean => {
-    if (grupo === "todos") return true;
-    if (grupo === "novos") return STATUS_NOVOS.includes(c.status);
-    if (grupo === "em_os") return STATUS_OS.includes(c.status);
-    if (grupo === "concluidos") return STATUS_OK.includes(c.status);
-    return c.status === "cancelado";
-  };
+  const [
+    totalAtivos,
+    porStatus,
+    criticos,
+    disponibilidade,
+    osAbertas,
+    backlogOS,
+    backlogDemanda,
+    sla,
+    mttr,
+    texec,
+    mtbf,
+    estoque,
+    solicitacoes,
+    topOS,
+    topCusto,
+    topReinc,
+    consumo,
+    custoTotal,
+  ] = await Promise.all([
+    queryTotalAtivos(qctx),
+    queryAtivosPorStatus(qctx),
+    queryAtivosCriticos(qctx),
+    queryDisponibilidade(qctx),
+    queryOSAbetas(qctx),
+    queryBacklogOS(qctx),
+    queryBacklogDemanda(qctx),
+    querySLA(qctx),
+    queryMTTR(qctx),
+    queryTempoExecucao(qctx),
+    queryMTBF(qctx),
+    queryEstoqueResumo(qctx),
+    querySolicitacoesPendentes(qctx),
+    queryTopAtivos(qctx, 10),
+    queryTopAtivosPorCusto(qctx, 10),
+    queryTopAtivosPorReincidencia(qctx, 10),
+    queryConsumoPorProduto(qctx, 10),
+    queryCustoTotal(qctx),
+  ]);
 
-  const contagem: Record<Exclude<AbaId, "todos">, number> = {
-    novos: chamados.filter((c) => STATUS_NOVOS.includes(c.status)).length,
-    em_os: chamados.filter((c) => STATUS_OS.includes(c.status)).length,
-    concluidos: chamados.filter((c) => STATUS_OK.includes(c.status)).length,
-    cancelados: chamados.filter((c) => c.status === "cancelado").length,
-  };
-
-  const visiveis = chamados.filter(
-    (c) =>
-      emGrupo(c, aba) &&
-      (!filtroImpacto || c.impacto === filtroImpacto),
-  );
-
-  function hrefComFiltros(proxStatus: string, proxImpacto: ImpactoOperacional | null) {
-    const p = new URLSearchParams();
-    if (proxStatus !== "todos") p.set("status", proxStatus);
-    if (proxImpacto) p.set("impacto", proxImpacto);
-    const q = p.toString();
-    return q === "" ? "/admin/dashboard" : `/admin/dashboard?${q}`;
-  }
-
-  const kpis: { rotulo: string; valor: number; Icone: (p: { className?: string }) => React.ReactNode; tom: Tom }[] = [
-    { rotulo: "Novos", valor: contagem.novos, Icone: Ticket, tom: "amber" },
-    { rotulo: "Em O.S.", valor: contagem.em_os, Icone: Hourglass, tom: "sky" },
-    { rotulo: "Concluídos", valor: contagem.concluidos, Icone: CircleCheck, tom: "emerald" },
-    { rotulo: "Total", valor: chamados.length, Icone: ClipboardList, tom: "zinc" },
-  ];
+  const porStatusEntries = Object.entries(porStatus) as [string, number][];
+  const slaDentro = sla.taxaDentro !== null ? `${sla.taxaDentro.toFixed(1)}%` : "—";
 
   return (
     <div className="space-y-6">
       <PageHeader
-        titulo="Dashboard"
-        descricao="Demandas, triagem e O.S. por estágio."
+        titulo="Dashboard Executivo"
+        descricao={`${ctx.orgNome} · Período: ${periodo} · America/Sao_Paulo`}
         acoes={
-          <span className="flex items-center gap-2">
-            <span className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-bold text-white tabular-nums">
-              {visiveis.length} em exibição
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1 rounded-xl border border-zinc-200 bg-zinc-100 p-1">
+              {PERIODOS.map((p) => (
+                <Link
+                  key={p.id}
+                  href={`/admin/dashboard?periodo=${p.id}`}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold ${periodo === p.id ? "bg-white shadow ring-1 ring-zinc-200" : "text-zinc-500 hover:text-zinc-800"}`}
+                >
+                  {p.rotulo}
+                </Link>
+              ))}
+            </div>
+            <span className="hidden text-xs text-zinc-400 sm:inline">
+              {new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
             </span>
-            <Link
-              href="/admin/chamados/novo"
-              className="inline-flex min-h-[40px] items-center rounded-full bg-white px-4 text-xs font-bold text-zinc-900 ring-1 ring-zinc-300 transition hover:bg-zinc-100"
-            >
-              + Novo chamado
-            </Link>
-          </span>
+          </div>
         }
       />
 
-      {/* Indicadores rápidos */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {kpis.map(({ rotulo, valor, Icone, tom }) => (
-          <StatCard key={rotulo} rotulo={rotulo} valor={valor} Icone={Icone} tom={tom} />
-        ))}
-      </div>
+      {/* N1 — Saúde operacional */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N1 — Saúde operacional</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Card titulo="Total de ativos" valor={totalAtivos} href="/admin/ativos" sub="Todos cadastrados" />
+          <Card titulo="Ativos críticos" valor={criticos} href="/admin/ativos?critico=1" sub={`${totalAtivos > 0 ? ((criticos / totalAtivos) * 100).toFixed(1) : "0"}% do total`} />
+          <Card
+            titulo="Disponibilidade"
+            valor={disponibilidade.value !== null ? `${(disponibilidade.value * 100).toFixed(1)}%` : "—"}
+            estado={disponibilidade.state as "insufficient_data"}
+            sub={disponibilidade.state === "insufficient_data" ? "É necessário histórico adicional" : undefined}
+          />
+          <Card titulo="Ativos por status" valor={`${porStatusEntries.length} categorias`} sub={porStatusEntries.map(([k, v]) => `${k}: ${v}`).join(" · ") || "Sem dados"} />
+        </div>
+        {porStatusEntries.length > 0 && (
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Ativos por status — distribuição</p>
+            <div className="mt-3 flex h-4 overflow-hidden rounded-full">
+              {porStatusEntries.map(([status, qtd]) => {
+                const total = porStatusEntries.reduce((s, [, v]) => s + v, 0);
+                const pct = (qtd / total) * 100;
+                const color =
+                  status === "operacional" ? "bg-emerald-500" : status === "parado" ? "bg-red-500" : status === "em_manutencao" ? "bg-amber-500" : "bg-zinc-300";
+                return <div key={status} className={color} style={{ width: `${pct}%` }} title={`${status}: ${qtd}`} />;
+              })}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              {porStatusEntries.map(([k, v]) => (
+                <span key={k} className="rounded-full bg-zinc-100 px-2 py-1 font-medium">
+                  {k}: {v}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
 
-      {/* Abas por status */}
-      <nav
-        aria-label="Filtrar por status"
-        className="no-scrollbar flex gap-1 overflow-x-auto rounded-2xl border border-zinc-200/70 bg-zinc-200/60 p-1.5 shadow-inner"
-      >
-        {ABAS.map(({ id, rotulo }) => {
-          const total =
-            id === "todos"
-              ? chamados.filter((c) => !filtroImpacto || c.impacto === filtroImpacto).length
-              : contagem[id];
-          const ativo = aba === id;
-          return (
-            <Link
-              key={id}
-              href={hrefComFiltros(id, filtroImpacto)}
-              aria-current={ativo ? "page" : undefined}
-              className={cn(
-                "flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-bold whitespace-nowrap transition-all",
-                ativo
-                  ? "scale-[1.02] bg-white text-zinc-900 shadow-md ring-1 ring-zinc-200"
-                  : "text-zinc-500 hover:bg-white/50 hover:text-zinc-800",
-              )}
-            >
-              {rotulo}
-              <span
-                className={cn(
-                  "rounded-full px-1.5 text-xs tabular-nums",
-                  ativo ? "bg-zinc-900 text-white" : "bg-zinc-300/60 text-zinc-600",
-                )}
-              >
-                {total}
-              </span>
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Filtro por impacto operacional */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-          Impacto:
-        </span>
-        <Link
-          href={hrefComFiltros(aba, null)}
-          aria-current={!filtroImpacto ? "page" : undefined}
-          className={cn(
-            "rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition",
-            !filtroImpacto
-              ? "bg-zinc-900 text-white ring-zinc-900"
-              : "bg-white text-zinc-600 ring-zinc-300 hover:bg-zinc-100",
-          )}
-        >
-          Todos
-        </Link>
-        {IMPACTOS.map(({ id, rotulo }) => {
-          const ativo = filtroImpacto === id;
-          return (
-            <Link
-              key={id}
-              href={hrefComFiltros(aba, ativo ? null : id)}
-              aria-current={ativo ? "page" : undefined}
-              className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition",
-                ativo
-                  ? "bg-zinc-900 text-white ring-zinc-900"
-                  : "bg-white text-zinc-600 ring-zinc-300 hover:bg-zinc-100",
-              )}
-            >
-              {rotulo}
-            </Link>
-          );
-        })}
-      </div>
-
-      {/* Lista de chamados — linhas detalhadas, sem grid */}
-      {visiveis.length === 0 ? (
-        <EmptyState
-          Icone={ClipboardList}
-          titulo="Nenhum chamado aqui"
-          descricao="Novos chamados abertos via QR Code aparecem neste painel. Tente alterar os filtros ou aguarde novas solicitações."
-        />
-      ) : (
-        <ul className="divide-y divide-zinc-200/80 overflow-hidden rounded-3xl border border-zinc-200/70 bg-white shadow-sm">
-          {visiveis.map((chamado) => (
-            <li
-              key={chamado.id}
-              className="group relative flex gap-3 p-4 transition hover:bg-zinc-50 sm:items-center sm:gap-4 sm:p-5"
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute top-4 bottom-4 left-0 w-1.5 rounded-r-full",
-                  ACENTO_STATUS[chamado.status],
-                )}
-              />
-              <div className="min-w-0 flex-1 pl-2">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <h2 className="truncate text-base font-black text-zinc-900">
-                    {nomeDoAtivo(chamado.ativos)}
-                  </h2>
-                  <StatusBadge status={chamado.status} />
-                  {chamado.os_status && <OsStatusBadge status={chamado.os_status} />}
-                  <ImpactoBadge impacto={chamado.impacto} />
-                </div>
-                <p className="mt-1.5 line-clamp-2 text-sm text-zinc-600">
-                  {chamado.descricao}
-                </p>
-                <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
-                  <span className="inline-flex items-center gap-1">
-                    <User className="size-3.5 shrink-0" />
-                    {chamado.solicitante}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <CalendarDays className="size-3.5 shrink-0" />
-                    {formatarDataHora(chamado.created_at)}
-                  </span>
-                  <span className="font-mono text-[11px] text-zinc-400">
-                    #{chamado.id.slice(0, 8).toUpperCase()}
-                  </span>
-                </p>
+      {/* N2 — Eficiência */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N2 — Eficiência operacional</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Card titulo="O.S. abertas" valor={osAbertas} href="/admin/chamados?os_status=aberta" sub={`Backlog O.S.: ${backlogOS} · Demanda: ${backlogDemanda}`} />
+          <Card titulo="Backlog" valor={`${backlogOS}`} sub={`Demanda: ${backlogDemanda} · Atrasado depende de prazo`} />
+          <Card
+            titulo="Tempo médio de resolução"
+            valor={mttr.value !== null ? formatarDuracaoMedia(mttr.value) : "—"}
+            estado={mttr.state as "insufficient_data"}
+            sub="MTTR: created_at → concluido_em"
+          />
+          <Card
+            titulo="Tempo médio de execução"
+            valor={texec.value !== null ? formatarDuracaoMedia(texec.value) : "—"}
+            estado={texec.state as "insufficient_data"}
+            sub="data_inicio → data_fim"
+          />
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">SLA — dentro/próximo/atrasado/sem prazo</p>
+            <div className="mt-3">
+              <div className="flex h-3 overflow-hidden rounded-full bg-zinc-100">
+                <div className="bg-emerald-500" style={{ width: `${sla.totalComPrazo ? (sla.dentro / sla.totalComPrazo) * 100 : 0}%` }} title={`Dentro: ${sla.dentro}`} />
+                <div className="bg-amber-400" style={{ width: `${sla.totalComPrazo ? (sla.proximo / sla.totalComPrazo) * 100 : 0}%` }} title={`Próximo: ${sla.proximo}`} />
+                <div className="bg-red-500" style={{ width: `${sla.totalComPrazo ? (sla.atrasado / sla.totalComPrazo) * 100 : 0}%` }} title={`Atrasado: ${sla.atrasado}`} />
               </div>
-              <Link
-                href={`/admin/chamados/${chamado.id}`}
-                aria-label={`Abrir detalhes do chamado de ${nomeDoAtivo(chamado.ativos)}`}
-                className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 self-center rounded-2xl bg-zinc-900 px-4 text-sm font-bold whitespace-nowrap text-white shadow-lg transition hover:bg-zinc-700"
-              >
-                Detalhes
-                <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full bg-emerald-100 px-2 py-1 font-bold text-emerald-800">Dentro: {sla.dentro} ({slaDentro})</span>
+                <span className="rounded-full bg-amber-100 px-2 py-1 font-bold text-amber-800">Próximo (2d): {sla.proximo}</span>
+                <span className="rounded-full bg-red-100 px-2 py-1 font-bold text-red-800">Atrasado: {sla.atrasado}</span>
+                <span className="rounded-full bg-zinc-100 px-2 py-1">Sem prazo: {sla.semPrazo}</span>
+              </div>
+            </div>
+          </div>
+          <Card
+            titulo="MTBF"
+            valor={mtbf.value !== null ? formatarDuracaoMedia(mtbf.value) : "—"}
+            estado={mtbf.state as "insufficient_data"}
+            sub={mtbf.state === "insufficient_data" ? "≥3 falhas corretiva com ativo_id" : "Média de intervalos entre falhas"}
+          />
+        </div>
+      </section>
+
+      {/* N3 — Recursos */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N3 — Recursos e demanda</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Card titulo="Estoque — disponível" valor={estoque.disponivel} href="/admin/estoque" sub={`Críticos: ${estoque.criticos} · Abaixo reposição: ${estoque.abaixoReposicao}`} />
+          <Card titulo="Estoque — valor físico" valor={formatarMoeda(estoque.valorFisico)} sub={`${estoque.total} produtos · físico × custo_médio`} />
+          <Card titulo="Solicitações pendentes" valor={solicitacoes} href="/admin/compras/solicitacoes" sub="rascunho/enviada/em_analise/em_cotacao" />
+          <Card titulo="Consumo por produto" valor={`${consumo.porQuantidade.length} produtos`} sub="Top consumo no período" />
+        </div>
+        <div className="grid gap-3 lg:grid-cols-3">
+          <BarList titulo="Top ativos por O.S. (Top 10)" itens={topOS} hrefBase="/admin/chamados" />
+          <BarList titulo="Top ativos por custo (Top 10)" itens={topCusto.map(([id, v]) => [id, Math.round(v)] as [string, number])} hrefBase="/admin/chamados" />
+          <BarList titulo="Top ativos por reincidência (Top 10)" itens={topReinc} hrefBase="/admin/chamados" />
+        </div>
+        {consumo.porQuantidade.length > 0 && (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <BarList titulo="Top consumo — quantidade" itens={consumo.porQuantidade.slice(0, 10)} />
+            <BarList titulo="Top consumo — valor" itens={consumo.porValor.slice(0, 10).map(([id, v]) => [id, Math.round(v)] as [string, number])} />
+          </div>
+        )}
+      </section>
+
+      {/* N4 — Custos */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N4 — Custos</h2>
+        <Card
+          titulo="Custo total das O.S."
+          valor={formatarMoeda(custoTotal)}
+          href="/admin/relatorios?aba=custos"
+          sub="Materiais consumidos + mão de obra + serviços + outros (período)"
+        />
+        <p className="text-xs text-zinc-500">
+          Custo não inclui compras de aquisição não consumidas. Teste de regressão: Compra R$1.000 + Consumo R$100 = Custo R$100.
+        </p>
+      </section>
+
+      <p className="text-xs text-zinc-400">
+        Período padrão: 30 dias · Timezone: America/Sao_Paulo (UTC no banco) · Tenant: {ctx.orgId.slice(0, 8)} · Cache: org+filtros+role+período
+      </p>
     </div>
   );
 }
