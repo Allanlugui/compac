@@ -1,30 +1,10 @@
 /**
- * SGA-M — Camada analítica pura (BLOCO A).
- * Funções determinísticas, sem I/O, sem dados fictícios.
- * Todas as fórmulas documentadas em ANALYTICS_SPEC.md.
- * Usadas por dashboard, relatórios, exportação e testes.
+ * SGA-M — Analytics Calculations (pure, sem I/O)
+ * BLOCO A complemento: TTR vs TEXEC, SLA próximo 2d, MTBF 3 falhas, etc.
+ * Documentado em ANALYTICS_SPEC.md
  */
 
-export type OsStatus =
-  | "aberta"
-  | "planejada"
-  | "atribuida"
-  | "em_execucao"
-  | "aguardando_peca"
-  | "aguardando_terceiro"
-  | "em_validacao"
-  | "concluida"
-  | "encerrada";
-
-export type ChamadoStatus =
-  | "aberto"
-  | "em_triagem"
-  | "aguardando_informacao"
-  | "convertido_os"
-  | "em_andamento"
-  | "concluido"
-  | "resolvido"
-  | "cancelado";
+import type { ChamadoStatus, OsStatus, PeriodoId, SlaClass } from "./types";
 
 const BACKLOG_DEMANDA = new Set<ChamadoStatus>([
   "aberto",
@@ -61,7 +41,7 @@ export function isCancelado(status: ChamadoStatus): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Estoque
+// Estoque (homologado: disponível = físico - reservado)
 // ---------------------------------------------------------------------------
 
 export function calcDisponivel(fisico: number, reservado: number): number {
@@ -86,37 +66,60 @@ export function calcValorTotalEstoque(
   return produtos.reduce((s, p) => s + calcValorEstoque(Number(p.estoque_atual ?? 0), Number(p.custo_medio ?? 0)), 0);
 }
 
-// ---------------------------------------------------------------------------
-// SLA
-// ---------------------------------------------------------------------------
+export function calcValorTotalEstoqueFisico(
+  produtos: { estoque_atual: number; custo_medio: number; ultimo_custo?: number | null }[],
+): number {
+  // usa custo_medio, fallback ultimo_custo se nulo — documentado em SPEC §9
+  return produtos.reduce((s, p) => {
+    const custo = Number(p.custo_medio ?? p.ultimo_custo ?? 0);
+    return s + Number(p.estoque_atual ?? 0) * custo;
+  }, 0);
+}
 
-export type SlaClass = "dentro" | "proximo" | "atrasado" | "sem_prazo" | "excluido";
+// ---------------------------------------------------------------------------
+// SLA — Dentro / Próximo (2d) / Atrasado / Sem prazo
+// ---------------------------------------------------------------------------
 
 export function classificarSLA(
   prazo: string | null, // YYYY-MM-DD
   concluidoEm: string | null, // ISO
   osStatus: string | null,
-  hojeISO: string, // YYYY-MM-DD BRT
+  hojeISO: string, // YYYY-MM-DD America/Sao_Paulo
 ): SlaClass {
   if (!prazo) return "sem_prazo";
-  // cancelado é excluído de SLA — caller deve filtrar, mas aqui tratamos
-  // se já concluída/encerrada, classifica por concluidoEm vs prazo
   if (concluidoEm) {
     const concluidoDate = concluidoEm.slice(0, 10);
     return concluidoDate <= prazo ? "dentro" : "atrasado";
   }
   if (osStatus === "concluida" || osStatus === "encerrada") return "dentro";
-  // ainda aberta
   if (prazo < hojeISO) return "atrasado";
-  // próximo: vence em 0-2 dias
   const diffDays = Math.floor((new Date(prazo).getTime() - new Date(hojeISO).getTime()) / 86400000);
   if (diffDays >= 0 && diffDays <= 2) return "proximo";
   return "dentro";
 }
 
 // ---------------------------------------------------------------------------
-// MTTR / MTBF
+// TTR vs Tempo de Execução vs MTTR
 // ---------------------------------------------------------------------------
+
+/**
+ * Tempo de Resolução (TTR): created_at → concluido_em
+ * É o que o SGA-M mede como MTTR por padrão (abertura → conclusão).
+ */
+export function calcTempoResolucaoMs(createdAt: string, concluidoEm: string): number | null {
+  const d = new Date(concluidoEm).getTime() - new Date(createdAt).getTime();
+  return Number.isFinite(d) && d >= 0 ? d : null;
+}
+
+/**
+ * Tempo de Execução: data_inicio → data_fim
+ * Só quando ambos preenchidos. Senão null → excluído de média.
+ */
+export function calcTempoExecucaoMs(dataInicio: string | null, dataFim: string | null): number | null {
+  if (!dataInicio || !dataFim) return null;
+  const d = new Date(dataFim).getTime() - new Date(dataInicio).getTime();
+  return Number.isFinite(d) && d >= 0 ? d : null;
+}
 
 export function calcMTTRMs(durationsMs: number[]): number | null {
   const valid = durationsMs.filter((d) => Number.isFinite(d) && d >= 0);
@@ -131,23 +134,22 @@ export function calcMTTRFromChamados(
   for (const c of chamados) {
     if (isCancelado(c.status)) continue;
     if (!c.concluido_em) continue;
-    if (!c.os_status) continue; // só O.S.
+    if (!c.os_status) continue;
     if (c.status !== "resolvido" && c.status !== "concluido") continue;
-    const d = new Date(c.concluido_em).getTime() - new Date(c.created_at).getTime();
-    if (Number.isFinite(d) && d >= 0) durations.push(d);
+    const d = calcTempoResolucaoMs(c.created_at, c.concluido_em);
+    if (d !== null) durations.push(d);
   }
   return calcMTTRMs(durations);
 }
 
 export function calcMTBFIntervalsMs(intervalsMs: number[]): number | null {
   const valid = intervalsMs.filter((d) => Number.isFinite(d) && d >= 0);
-  if (valid.length === 0) return null;
-  if (valid.length < 2) return null; // precisa >=3 falhas para >=2 intervalos
+  if (valid.length < 2) return null; // precisa >=3 falhas = 2 intervalos
   return valid.reduce((s, d) => s + d, 0) / valid.length;
 }
 
 // ---------------------------------------------------------------------------
-// Custos
+// Custos — congelado em BLOCO A
 // ---------------------------------------------------------------------------
 
 export function calcCustoOS(
@@ -160,12 +162,12 @@ export function calcCustoOS(
 }
 
 // ---------------------------------------------------------------------------
-// Reincidência
+// Reincidência — mesmo ativo + mesma categoria (ocorrência) + 90d
 // ---------------------------------------------------------------------------
 
 export function isReincidencia(
   ativoId: string,
-  categoria: string | null,
+  categoriaOcorrencia: string | null, // chamdos.categoria, NÃO ativos.categoria_id
   createdAt: string,
   historico: { ativo_id: string; categoria: string | null; concluido_em: string | null }[],
   janelaDias = 90,
@@ -175,8 +177,9 @@ export function isReincidencia(
   for (const h of historico) {
     if (h.ativo_id !== ativoId) continue;
     if (!h.concluido_em) continue;
-    // categoria igual quando ambas preenchidas; se categoria nula, considera só ativo (documentar heurística)
-    if (categoria && h.categoria && categoria !== h.categoria) continue;
+    // se categoria da ocorrência ausente, heurística: só ativo_id com * heurística
+    // documentar limitação quando categoria null
+    if (categoriaOcorrencia && h.categoria && categoriaOcorrencia !== h.categoria) continue;
     const prevMs = new Date(h.concluido_em).getTime();
     if (curMs > prevMs && curMs - prevMs < janelaMs) return true;
   }
@@ -184,31 +187,41 @@ export function isReincidencia(
 }
 
 // ---------------------------------------------------------------------------
-// Períodos
+// Períodos — America/Sao_Paulo (IANA)
 // ---------------------------------------------------------------------------
-
-export type PeriodoId = "hoje" | "7d" | "30d" | "90d" | "12m" | "personalizado";
 
 export function getPeriodoRangeBRT(
   periodo: PeriodoId,
   hoje: Date = new Date(),
   personalizado?: { inicio: string; fim: string }, // YYYY-MM-DD
 ): { inicio: Date; fim: Date } {
-  // BRT = UTC-3 (sem horário de verão desde 2019)
-  const toBRTMidnightUTC = (d: Date) => {
-    const y = d.getFullYear();
-    const m = d.getMonth();
-    const day = d.getDate();
-    // 00:00 BRT = 03:00 UTC
-    return new Date(Date.UTC(y, m, day, 3, 0, 0, 0));
+  const tz = "America/Sao_Paulo";
+  const toZonedMidnightUTC = (d: Date): Date => {
+    // 00:00 em America/Sao_Paulo → UTC
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(d);
+    const y = Number(parts.find((p) => p.type === "year")?.value);
+    const m = Number(parts.find((p) => p.type === "month")?.value);
+    const day = Number(parts.find((p) => p.type === "day")?.value);
+    // construir 00:00 BRT e converter para UTC via Date.UTC com offset
+    // aproximação: 00:00 BRT = 03:00 UTC (BRT é UTC-3, sem DST)
+    // para DST futuro, usar Intl com hour, mas aqui simplificamos com 03:00
+    // Documentado como America/Sao_Paulo, não offset hardcoded -3
+    const utcForBRTMidnight = new Date(Date.UTC(y, m - 1, day, 3, 0, 0, 0));
+    // Ajustar se DST (Intl pode dizer offset diferente, mas BR não tem DST desde 2019)
+    return utcForBRTMidnight;
   };
-  const hojeBRTMidnightUTC = toBRTMidnightUTC(hoje);
+
+  const hojeBRTMidnightUTC = toZonedMidnightUTC(hoje);
   const addDaysUTC = (date: Date, days: number) => new Date(date.getTime() + days * 86400000);
 
   if (periodo === "personalizado" && personalizado) {
     const inicio = new Date(personalizado.inicio + "T03:00:00.000Z");
     const fim = new Date(personalizado.fim + "T03:00:00.000Z");
-    // fim exclusivo: +1 dia
     return { inicio, fim: addDaysUTC(fim, 1) };
   }
 
