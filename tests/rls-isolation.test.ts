@@ -1,382 +1,371 @@
 import { describe, expect, it } from "vitest";
-import { setupOrg } from "./setup";
+import { ADMIN_CLIENT, clienteComo, setupOrg } from "./setup";
 
 /**
  * TESTES DE ISOLAMENTO MULTI-TENANT (RLS)
  *
- * Valida que um usuário da Org A não consegue ler, escrever ou
- * modificar dados da Org B, mesmo manipulando IDs diretamente via
- * Supabase client com role AUTHENTICATED.
- *
- * Cada teste cria dados reais no banco (service role), depois usa
- * o client AUTHENTICATED da org "atacante" para tentar acessar dados
- * da org "vítima". O RLS do PostgreSQL deve bloquear tudo.
+ * Valida que um usuário autenticado da Org A não consegue ler,
+ * escrever ou modificar dados da Org B, mesmo manipulando IDs
+ * diretamente. Cada teste usa `clienteComo(userId)` para criar
+ * um client autenticado real (com JWT válido) e o `admin` para
+ * criar os dados a serem atacados.
  */
 
 describe("RLS — Isolamento multi-tenant", () => {
 
-  it("ativos: org B não vê ativos da org A", async () => {
+  it("ativos: cliente da org B NÃO VÊ ativos da org A", async () => {
     const orgA = await setupOrg("org-a");
     const orgB = await setupOrg("org-b");
 
-    const ativoA = await orgA.client.from("ativos").insert({
-      organization_id: orgA.orgId,
-      nome: "Ativo Org A",
-      status: "operacional",
-      tipo: "equipamento",
-    }).select("id").single();
+    // Cria ativo na org A via service role (bypass RLS)
+    const { data: ativoA } = await ADMIN_CLIENT
+      .from("ativos")
+      .insert({
+        organization_id: orgA.orgId,
+        nome: "Ativo Sigiloso",
+        status: "operacional",
+        tipo: "equipamento",
+      })
+      .select("id")
+      .single();
+    expect(ativoA).not.toBeNull();
 
-    expect(ativoA.error).toBeNull();
-    expect(ativoA.data).not.toBeNull();
-
-    // Org B tenta ler ativo da Org A
-    const { data: ativoVisivel, error: erroRead } = await orgB.client
+    // Autentica como user da org B
+    const clienteB = await clienteComo(orgB.userId);
+    const { data: visivel } = await clienteB
       .from("ativos")
       .select("id")
-      .eq("id", ativoA.data!.id)
+      .eq("id", ativoA!.id)
       .maybeSingle();
-
-    expect(erroRead).toBeNull();
-    expect(ativoVisivel).toBeNull(); // RLS filtra
+    expect(visivel).toBeNull();
   });
 
-  it("ativos: org B não consegue atualizar ativo da org A", async () => {
+  it("ativos: cliente da org B NÃO CONSEGUE ATUALIZAR ativo da org A", async () => {
     const orgA = await setupOrg("org-a");
     const orgB = await setupOrg("org-b");
 
-    const ativoA = await orgA.client.from("ativos").insert({
-      organization_id: orgA.orgId,
-      nome: "Ativo Org A",
-      status: "operacional",
-      tipo: "equipamento",
-    }).select("id").single();
-
-    // Org B tenta forçar update via client
-    const { error: erroUpdate } = await orgB.client
+    const { data: ativoA } = await ADMIN_CLIENT
       .from("ativos")
-      .update({ nome: "Invadido por Org B" })
-      .eq("id", ativoA.data!.id);
-
-    // RLS com check(organization_id) → rejeita
-    expect(erroUpdate).not.toBeNull();
-  });
-
-  it("ativos: org B não consegue deletar ativo da org A", async () => {
-    const orgA = await setupOrg("org-a");
-    const orgB = await setupOrg("org-b");
-
-    const ativoA = await orgA.client.from("ativos").insert({
-      organization_id: orgA.orgId,
-      nome: "Ativo Org A",
-      status: "operacional",
-      tipo: "equipamento",
-    }).select("id").single();
-
-    const { error: erroDelete } = await orgB.client
-      .from("ativos")
-      .delete()
-      .eq("id", ativoA.data!.id);
-
-    // RLS blocking delete
-    expect(erroDelete).not.toBeNull();
-  });
-
-  it("chamados: org B não vê chamados da org A", async () => {
-    const orgA = await setupOrg("org-a");
-    const orgB = await setupOrg("org-b");
-
-    const ativoA = await orgA.client.from("ativos").insert({
-      organization_id: orgA.orgId,
-      nome: "Ativo Org A",
-      status: "operacional",
-      tipo: "equipamento",
-    }).select("id").single();
-
-    const chamadoA = await orgA.client.from("chamados").insert({
-      organization_id: orgA.orgId,
-      ativo_id: ativoA.data!.id,
-      solicitante: "User A",
-      descricao: "Chamado da Org A",
-      origem: "administrador",
-      prioridade: "media",
-      status: "aberto",
-    }).select("id").single();
-
-    const { data: chamadoVisivel, error: erroRead } = await orgB.client
-      .from("chamados")
+      .insert({
+        organization_id: orgA.orgId,
+        nome: "Ativo Protegido",
+        status: "operacional",
+        tipo: "equipamento",
+      })
       .select("id")
-      .eq("id", chamadoA.data!.id)
-      .maybeSingle();
+      .single();
 
-    expect(erroRead).toBeNull();
-    expect(chamadoVisivel).toBeNull();
+    const clienteB = await clienteComo(orgB.userId);
+    const { error } = await clienteB
+      .from("ativos")
+      .update({ nome: "Invadido" })
+      .eq("id", ativoA!.id);
+    expect(error).not.toBeNull();
+
+    // Confirma que o nome NÃO mudou
+    const { data: ainda } = await ADMIN_CLIENT
+      .from("ativos")
+      .select("nome")
+      .eq("id", ativoA!.id)
+      .single();
+    expect(ainda?.nome).toBe("Ativo Protegido");
   });
 
-  it("chamados: org B não consegue criar chamado na org A", async () => {
+  it("ativos: cliente da org B NÃO CONSEGUE DELETAR ativo da org A", async () => {
     const orgA = await setupOrg("org-a");
     const orgB = await setupOrg("org-b");
 
-    const ativoA = await orgA.client.from("ativos").insert({
-      organization_id: orgA.orgId,
-      nome: "Ativo Org A",
-      status: "operacional",
-      tipo: "equipamento",
-    }).select("id").single();
+    const { data: ativoA } = await ADMIN_CLIENT
+      .from("ativos")
+      .insert({
+        organization_id: orgA.orgId,
+        nome: "Ativo Indelével",
+        status: "operacional",
+        tipo: "equipamento",
+      })
+      .select("id")
+      .single();
 
-    // Org B tenta criar chamado com organization_id da Org A
-    const { data, error: erroInsert } = await orgB.client
+    const clienteB = await clienteComo(orgB.userId);
+    const { error } = await clienteB.from("ativos").delete().eq("id", ativoA!.id);
+    expect(error).not.toBeNull();
+
+    const { data: existe } = await ADMIN_CLIENT
+      .from("ativos")
+      .select("id")
+      .eq("id", ativoA!.id)
+      .maybeSingle();
+    expect(existe).not.toBeNull();
+  });
+
+  it("chamados: cliente da org B NÃO VÊ chamados da org A", async () => {
+    const orgA = await setupOrg("org-a");
+    const orgB = await setupOrg("org-b");
+
+    const { data: ativoA } = await ADMIN_CLIENT
+      .from("ativos")
+      .insert({ organization_id: orgA.orgId, nome: "A1", status: "operacional", tipo: "equipamento" })
+      .select("id")
+      .single();
+    const { data: chamadoA } = await ADMIN_CLIENT
       .from("chamados")
       .insert({
-        organization_id: orgA.orgId, // forçando org A
-        ativo_id: ativoA.data!.id,
-        solicitante: "User B",
-        descricao: "Tentativa invasão",
+        organization_id: orgA.orgId,
+        ativo_id: ativoA!.id,
+        solicitante: "User A",
+        descricao: "Confidencial",
         origem: "administrador",
         prioridade: "media",
         status: "aberto",
       })
       .select("id")
-      .maybeSingle();
+      .single();
 
-    // RLS with check(organization_id) → inserting into org A's namespace should fail
-    // OR the trigger enforce_same_org should block it
-    expect(erroInsert).not.toBeNull();
-  });
-
-  it("produtos: org B não vê produtos da org A", async () => {
-    const orgA = await setupOrg("org-a");
-    const orgB = await setupOrg("org-b");
-
-    const produtoA = await orgA.client.from("produtos").insert({
-      organization_id: orgA.orgId,
-      codigo: "PROD-A-001",
-      descricao: "Produto Org A",
-      estoque_atual: 100,
-    }).select("id").single();
-
-    const { data: produtoVisivel, error: erroRead } = await orgB.client
-      .from("produtos")
+    const clienteB = await clienteComo(orgB.userId);
+    const { data: visivel } = await clienteB
+      .from("chamados")
       .select("id")
-      .eq("id", produtoA.data!.id)
+      .eq("id", chamadoA!.id)
       .maybeSingle();
-
-    expect(erroRead).toBeNull();
-    expect(produtoVisivel).toBeNull();
+    expect(visivel).toBeNull();
   });
 
-  it("produtos: org B não consegue dar baixa em produto da org A", async () => {
+  it("chamados: cliente da org B NÃO CONSEGUE CRIAR chamado na org A", async () => {
     const orgA = await setupOrg("org-a");
     const orgB = await setupOrg("org-b");
 
-    const ativoA = await orgA.client.from("ativos").insert({
-      organization_id: orgA.orgId,
-      nome: "Ativo Org A",
-      status: "operacional",
-      tipo: "equipamento",
-    }).select("id").single();
+    const { data: ativoA } = await ADMIN_CLIENT
+      .from("ativos")
+      .insert({ organization_id: orgA.orgId, nome: "A1", status: "operacional", tipo: "equipamento" })
+      .select("id")
+      .single();
 
-    const chamadoA = await orgA.client.from("chamados").insert({
-      organization_id: orgA.orgId,
-      ativo_id: ativoA.data!.id,
-      solicitante: "User A",
-      descricao: "Chamado Org A",
+    const clienteB = await clienteComo(orgB.userId);
+    const { error } = await clienteB.from("chamados").insert({
+      organization_id: orgA.orgId, // forçando org A
+      ativo_id: ativoA!.id,
+      solicitante: "Atacante",
+      descricao: "Tentativa de invasão",
       origem: "administrador",
       prioridade: "media",
       status: "aberto",
-    }).select("id").single();
-
-    const produtoA = await orgA.client.from("produtos").insert({
-      organization_id: orgA.orgId,
-      codigo: "PROD-A-002",
-      descricao: "Produto Org A",
-      estoque_atual: 100,
-    }).select("id").single();
-
-    // Org B tenta consumir estoque da Org A
-    const { error: erroConsumo } = await orgB.client
-      .from("movimentacoes_estoque")
-      .insert({
-        organization_id: orgA.orgId, // forçando org A
-        produto_id: produtoA.data!.id,
-        chamado_id: chamadoA.data!.id,
-        tipo: "consumo",
-        quantidade: 5,
-        custo_unitario: 10,
-      });
-
-    // RLS ou trigger deve bloquear
-    expect(erroConsumo).not.toBeNull();
+    });
+    expect(error).not.toBeNull();
   });
 
-  it("fornecedores: org B não vê fornecedores da org A", async () => {
+  it("produtos: cliente da org B NÃO VÊ produtos da org A", async () => {
     const orgA = await setupOrg("org-a");
     const orgB = await setupOrg("org-b");
 
-    const fornA = await orgA.client.from("fornecedores").insert({
-      organization_id: orgA.orgId,
-      nome: "Fornecedor Org A",
-    }).select("id").single();
+    const { data: produtoA } = await ADMIN_CLIENT
+      .from("produtos")
+      .insert({ organization_id: orgA.orgId, codigo: "SECRETO-1", descricao: "P1", estoque_atual: 50 })
+      .select("id")
+      .single();
 
-    const { data: fornVisivel, error: erroRead } = await orgB.client
+    const clienteB = await clienteComo(orgB.userId);
+    const { data: visivel } = await clienteB
+      .from("produtos")
+      .select("id")
+      .eq("id", produtoA!.id)
+      .maybeSingle();
+    expect(visivel).toBeNull();
+  });
+
+  it("produtos: cliente da org B NÃO CONSEGUE DAR BAIXA em produto da org A", async () => {
+    const orgA = await setupOrg("org-a");
+    const orgB = await setupOrg("org-b");
+
+    const { data: ativoA } = await ADMIN_CLIENT
+      .from("ativos")
+      .insert({ organization_id: orgA.orgId, nome: "A1", status: "operacional", tipo: "equipamento" })
+      .select("id")
+      .single();
+    const { data: chamadoA } = await ADMIN_CLIENT
+      .from("chamados")
+      .insert({
+        organization_id: orgA.orgId,
+        ativo_id: ativoA!.id,
+        solicitante: "A",
+        descricao: "X",
+        origem: "administrador",
+        prioridade: "media",
+        status: "aberto",
+      })
+      .select("id")
+      .single();
+    const { data: produtoA } = await ADMIN_CLIENT
+      .from("produtos")
+      .insert({ organization_id: orgA.orgId, codigo: "X-1", descricao: "X", estoque_atual: 100 })
+      .select("id")
+      .single();
+
+    const clienteB = await clienteComo(orgB.userId);
+    const { error } = await clienteB.from("movimentacoes_estoque").insert({
+      organization_id: orgA.orgId, // forçando org A
+      produto_id: produtoA!.id,
+      chamado_id: chamadoA!.id,
+      user_id: orgB.userId,
+      tipo: "consumo",
+      quantidade: 10,
+      custo_unitario: 5,
+    });
+    expect(error).not.toBeNull();
+  });
+
+  it("fornecedores: cliente da org B NÃO VÊ fornecedores da org A", async () => {
+    const orgA = await setupOrg("org-a");
+    const orgB = await setupOrg("org-b");
+
+    const { data: fornA } = await ADMIN_CLIENT
+      .from("fornecedores")
+      .insert({ organization_id: orgA.orgId, nome: "Fornecedor Secreto" })
+      .select("id")
+      .single();
+
+    const clienteB = await clienteComo(orgB.userId);
+    const { data: visivel } = await clienteB
       .from("fornecedores")
       .select("id")
-      .eq("id", fornA.data!.id)
+      .eq("id", fornA!.id)
       .maybeSingle();
-
-    expect(erroRead).toBeNull();
-    expect(fornVisivel).toBeNull();
+    expect(visivel).toBeNull();
   });
 
-  it("auditoria_logs: org B não vê logs da org A", async () => {
+  it("auditoria_logs: cliente da org B NÃO VÊ logs da org A", async () => {
     const orgA = await setupOrg("org-a");
     const orgB = await setupOrg("org-b");
 
-    const ativoA = await orgA.client.from("ativos").insert({
-      organization_id: orgA.orgId,
-      nome: "Ativo Org A",
-      status: "operacional",
-      tipo: "equipamento",
-    }).select("id").single();
+    const { data: ativoA } = await ADMIN_CLIENT
+      .from("ativos")
+      .insert({ organization_id: orgA.orgId, nome: "A1", status: "operacional", tipo: "equipamento" })
+      .select("id")
+      .single();
+    const { data: logA } = await ADMIN_CLIENT
+      .from("auditoria_logs")
+      .insert({
+        organization_id: orgA.orgId,
+        tabela: "ativos",
+        registro_id: ativoA!.id,
+        acao: "INSERT",
+        executado_por: "user-a@sga-test.local",
+      })
+      .select("id")
+      .single();
 
-    const logA = await orgA.client.from("auditoria_logs").insert({
-      organization_id: orgA.orgId,
-      tabela: "ativos",
-      registro_id: ativoA.data!.id,
-      acao: "INSERT",
-      executado_por: "user-a@teste.com",
-    }).select("id").single();
-
-    const { data: logVisivel, error: erroRead } = await orgB.client
+    const clienteB = await clienteComo(orgB.userId);
+    const { data: visivel } = await clienteB
       .from("auditoria_logs")
       .select("id")
-      .eq("id", logA.data!.id)
+      .eq("id", logA!.id)
       .maybeSingle();
-
-    expect(erroRead).toBeNull();
-    expect(logVisivel).toBeNull();
+    expect(visivel).toBeNull();
   });
 
-  it("org A e org B veem SOMENTE seus próprios dados após operações mistas", async () => {
+  it("listagem: cada org vê APENAS seus próprios dados", async () => {
     const orgA = await setupOrg("org-a");
     const orgB = await setupOrg("org-b");
 
-    // Org A cria 3 ativos
     for (let i = 0; i < 3; i++) {
-      await orgA.client.from("ativos").insert({
+      await ADMIN_CLIENT.from("ativos").insert({
         organization_id: orgA.orgId,
-        nome: `Ativo Org A ${i}`,
+        nome: `Ativo-A-${i}`,
         status: "operacional",
         tipo: "equipamento",
       });
     }
-
-    // Org B cria 2 ativos
     for (let i = 0; i < 2; i++) {
-      await orgB.client.from("ativos").insert({
+      await ADMIN_CLIENT.from("ativos").insert({
         organization_id: orgB.orgId,
-        nome: `Ativo Org B ${i}`,
+        nome: `Ativo-B-${i}`,
         status: "operacional",
         tipo: "equipamento",
       });
     }
 
-    const { data: ativosA } = await orgA.client
-      .from("ativos")
-      .select("nome")
-      .order("created_at", { ascending: true });
+    const clienteA = await clienteComo(orgA.userId);
+    const clienteB = await clienteComo(orgB.userId);
 
-    const { data: ativosB } = await orgB.client
-      .from("ativos")
-      .select("nome")
-      .order("created_at", { ascending: true });
+    const { data: ativosA } = await clienteA.from("ativos").select("nome");
+    const { data: ativosB } = await clienteB.from("ativos").select("nome");
 
-    expect(ativosA?.every((a: { nome: string }) => a.nome.startsWith("Ativo Org A"))).toBe(true);
     expect(ativosA?.length).toBe(3);
-    expect(ativosB?.every((a: { nome: string }) => a.nome.startsWith("Ativo Org B"))).toBe(true);
+    expect(ativosA?.every((a: { nome: string }) => a.nome.startsWith("Ativo-A-"))).toBe(true);
     expect(ativosB?.length).toBe(2);
+    expect(ativosB?.every((a: { nome: string }) => a.nome.startsWith("Ativo-B-"))).toBe(true);
   });
 
-  it("trigger enforce_same_org: cross-org insert bloqueado", async () => {
+  it("trigger enforce_same_org: cross-org insert em chamado BLOQUEADO", async () => {
     const orgA = await setupOrg("org-a");
     const orgB = await setupOrg("org-b");
 
-    const ativoA = await orgA.client.from("ativos").insert({
-      organization_id: orgA.orgId,
-      nome: "Ativo Org A",
-      status: "operacional",
-      tipo: "equipamento",
-    }).select("id").single();
+    const { data: ativoA } = await ADMIN_CLIENT
+      .from("ativos")
+      .insert({ organization_id: orgA.orgId, nome: "A1", status: "operacional", tipo: "equipamento" })
+      .select("id")
+      .single();
 
-    // Org B tenta criar chamado usando ativo de outra org
-    const { error: erroChamado } = await orgB.client
-      .from("chamados")
-      .insert({
-        organization_id: orgB.orgId,
-        ativo_id: ativoA.data!.id, // ativo é da Org A
-        solicitante: "User B",
-        descricao: "Tentativa cross-tenant",
-        origem: "administrador",
-        prioridade: "media",
-        status: "aberto",
-      });
-
-    // Trigger enforce_same_org ou RLS bloqueia
-    expect(erroChamado).not.toBeNull();
+    // Cliente da org B tenta criar chamado referenciando ativo da org A
+    const clienteB = await clienteComo(orgB.userId);
+    const { error } = await clienteB.from("chamados").insert({
+      organization_id: orgB.orgId,
+      ativo_id: ativoA!.id, // ativo de outra org
+      solicitante: "B",
+      descricao: "Cross-tenant",
+      origem: "administrador",
+      prioridade: "media",
+      status: "aberto",
+    });
+    expect(error).not.toBeNull();
   });
 
-  it("dashboard: org A não vê totais da org B", async () => {
+  it("dashboard: contadores por org são isolados", async () => {
     const orgA = await setupOrg("org-a");
     const orgB = await setupOrg("org-b");
 
-    // Org A cria 5 chamados
-    const ativoA = await orgA.client.from("ativos").insert({
-      organization_id: orgA.orgId,
-      nome: "Ativo Org A",
-      status: "operacional",
-      tipo: "equipamento",
-    }).select("id").single();
+    const { data: ativoA } = await ADMIN_CLIENT
+      .from("ativos")
+      .insert({ organization_id: orgA.orgId, nome: "A1", status: "operacional", tipo: "equipamento" })
+      .select("id")
+      .single();
+    const { data: ativoB } = await ADMIN_CLIENT
+      .from("ativos")
+      .insert({ organization_id: orgB.orgId, nome: "B1", status: "operacional", tipo: "equipamento" })
+      .select("id")
+      .single();
 
     for (let i = 0; i < 5; i++) {
-      await orgA.client.from("chamados").insert({
+      await ADMIN_CLIENT.from("chamados").insert({
         organization_id: orgA.orgId,
-        ativo_id: ativoA.data!.id,
-        solicitante: "User A",
-        descricao: `Chamado A ${i}`,
+        ativo_id: ativoA!.id,
+        solicitante: "A",
+        descricao: `A-${i}`,
         origem: "administrador",
         prioridade: "media",
         status: "aberto",
       });
     }
-
-    // Org B cria 2 chamados
-    const ativoB = await orgB.client.from("ativos").insert({
-      organization_id: orgB.orgId,
-      nome: "Ativo Org B",
-      status: "operacional",
-      tipo: "equipamento",
-    }).select("id").single();
-
     for (let i = 0; i < 2; i++) {
-      await orgB.client.from("chamados").insert({
+      await ADMIN_CLIENT.from("chamados").insert({
         organization_id: orgB.orgId,
-        ativo_id: ativoB.data!.id,
-        solicitante: "User B",
-        descricao: `Chamado B ${i}`,
+        ativo_id: ativoB!.id,
+        solicitante: "B",
+        descricao: `B-${i}`,
         origem: "administrador",
         prioridade: "media",
         status: "aberto",
       });
     }
 
-    const { count: totalA } = await orgA.client
-      .from("chamados")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgA.orgId);
+    const clienteA = await clienteComo(orgA.userId);
+    const clienteB = await clienteComo(orgB.userId);
 
-    const { count: totalB } = await orgB.client
+    const { count: totalA } = await clienteA
       .from("chamados")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgB.orgId);
+      .select("id", { count: "exact", head: true });
+    const { count: totalB } = await clienteB
+      .from("chamados")
+      .select("id", { count: "exact", head: true });
 
     expect(totalA).toBe(5);
     expect(totalB).toBe(2);

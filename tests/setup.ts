@@ -1,28 +1,35 @@
+import { config } from "dotenv";
+config({ path: ".env.test" });
+import { SignJWT } from "jose";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY!;
-
-let orgACount = 0;
-let orgBCount = 0;
+const JWT_SECRET = process.env.SUPABASE_JWT_SECRET ?? "";
 
 export interface TestOrg {
-  client: SupabaseClient;
+  /** Cliente service_role — usado para criar dados no nome da org. */
+  admin: SupabaseClient;
+  /** ID da organização. */
   orgId: string;
+  /** UUID do usuário criado em auth.users. */
   userId: string;
   email: string;
   slug: string;
 }
 
 const usedEmails = new Set<string>();
+const usedOrgs = new Set<string>();
+let orgCounter = 0;
 
 function uniqueEmail(prefix: string): string {
   let attempt = 0;
   while (true) {
-    const email = attempt === 0
-      ? `${prefix}@sga-test.local`
-      : `${prefix}+${attempt}@sga-test.local`;
+    const email =
+      attempt === 0
+        ? `${prefix}@sga-test.local`
+        : `${prefix}+${attempt}@sga-test.local`;
     if (!usedEmails.has(email)) {
       usedEmails.add(email);
       return email;
@@ -31,189 +38,91 @@ function uniqueEmail(prefix: string): string {
   }
 }
 
-export async function criarOrganizacaoTeste(slug: string): Promise<string> {
-  orgACount++;
-  const nome = `Teste ${slug} ${orgACount}`;
+async function criarOrganizacao(slug: string): Promise<string> {
+  orgCounter++;
   const id = crypto.randomUUID();
-  const { error } = await ADMIN_CLIENT
-    .from("organizations")
-    .insert({ id, nome, slug, ativo: true })
+  const uniqueSlug = `${slug}-${orgCounter}-${Date.now().toString(36)}`;
+  const { error } = await ADMIN_CLIENT.from("organizations")
+    .insert({ id, nome: `Teste ${slug} ${orgCounter}`, slug: uniqueSlug })
     .select("id")
     .single();
-  if (error) throw new Error(`Falha ao criar org: ${error.message}`);
+  if (error) throw new Error(`criarOrganizacao: ${error.message}`);
+  usedOrgs.add(id);
   return id;
 }
 
-export async function criarUsuarioTeste(orgId: string): Promise<{ userId: string; email: string }> {
-  const email = uniqueEmail(`user-${orgId.slice(0, 8)}`);
+async function criarUsuario(email: string): Promise<string> {
   const { data, error } = await ADMIN_CLIENT.auth.admin.createUser({
     email,
     email_confirm: true,
     user_metadata: { full_name: `Teste ${email}` },
   });
-  if (error || !data.user) throw new Error(`Falha ao criar usuário: ${error?.message}`);
-  return { userId: data.user.id, email };
+  if (error || !data.user) throw new Error(`criarUsuario: ${error?.message}`);
+  return data.user.id;
 }
 
-export async function adicionarMembro(
-  userId: string,
-  orgId: string,
-  role: "ADMIN" | "GESTOR" | "TECNICO" | "SOLICITANTE" = "ADMIN"
-) {
-  const { error } = await ADMIN_CLIENT
-    .from("memberships")
-    .insert({ user_id: userId, organization_id: orgId, role, status: "ativo" });
-  if (error) throw new Error(`Falha ao adicionar membro: ${error.message}`);
+async function criarMembership(userId: string, orgId: string) {
+  const { error } = await ADMIN_CLIENT.from("memberships").insert({
+    user_id: userId,
+    organization_id: orgId,
+    role: "ADMIN",
+    status: "ativo",
+  });
+  if (error) throw new Error(`criarMembership: ${error.message}`);
 }
 
-export async function criarAtivo(orgId: string, nome: string): Promise<string> {
-  const { data, error } = await ADMIN_CLIENT
-    .from("ativos")
-    .insert({ organization_id: orgId, nome, status: "operacional", tipo: "equipamento" })
-    .select("id")
-    .single();
-  if (error) throw new Error(`Falha ao criar ativo: ${error.message}`);
-  return data.id;
+export async function setupOrg(slug: string): Promise<TestOrg> {
+  const orgId = await criarOrganizacao(slug);
+  const email = uniqueEmail(`user-${orgId.slice(0, 6)}`);
+  const userId = await criarUsuario(email);
+  await criarMembership(userId, orgId);
+  return { admin: ADMIN_CLIENT, orgId, userId, email, slug };
 }
 
-export async function criarChamado(orgId: string, ativoId: string, solicitante: string): Promise<string> {
-  const { data, error } = await ADMIN_CLIENT
-    .from("chamados")
-    .insert({
-      organization_id: orgId,
-      ativo_id: ativoId,
-      solicitante,
-      descricao: "Teste de isolamento RLS",
-      origem: "administrador",
-      prioridade: "media",
-      status: "aberto",
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(`Falha ao criar chamado: ${error.message}`);
-  return data.id;
+/**
+ * Cria um cliente autenticado como `userId` gerando JWT real via Supabase JWT_SECRET.
+ */
+export async function clienteComo(userId: string): Promise<SupabaseClient> {
+  if (!JWT_SECRET) throw new Error("SUPABASE_JWT_SECRET não definido no .env.test");
+  const secret = new TextEncoder().encode(JWT_SECRET);
+  const token = await new SignJWT({ role: "authenticated", sub: userId, aud: "authenticated" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("2h")
+    .sign(secret);
+  return createClient(SUPABASE_URL, token, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
 
-export async function criarProduto(orgId: string, codigo: string): Promise<string> {
-  const { data, error } = await ADMIN_CLIENT
-    .from("produtos")
-    .insert({ organization_id: orgId, codigo, descricao: `Produto ${codigo}`, estoque_atual: 100 })
-    .select("id")
-    .single();
-  if (error) throw new Error(`Falha ao criar produto: ${error.message}`);
-  return data.id;
-}
-
-export async function consumirEstoque(
-  orgId: string,
-  userId: string,
-  produtoId: string,
-  chamadoId: string,
-  quantidade: number
-): Promise<string> {
-  const { data, error } = await ADMIN_CLIENT
-    .from("movimentacoes_estoque")
-    .insert({
-      organization_id: orgId,
-      produto_id: produtoId,
-      chamado_id: chamadoId,
-      user_id: userId,
-      tipo: "consumo",
-      quantidade,
-      custo_unitario: 10,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(`Falha ao consumir estoque: ${error.message}`);
-  return data.id;
-}
-
-export async function criarFornecedor(orgId: string, nome: string): Promise<string> {
-  const { data, error } = await ADMIN_CLIENT
-    .from("fornecedores")
-    .insert({ organization_id: orgId, nome })
-    .select("id")
-    .single();
-  if (error) throw new Error(`Falha ao criar fornecedor: ${error.message}`);
-  return data.id;
-}
-
-export async function criarCompra(
-  orgId: string,
-  chamadoId: string,
-  item: string
-): Promise<string> {
-  const { data, error } = await ADMIN_CLIENT
-    .from("compras")
-    .insert({
-      organization_id: orgId,
-      chamado_id: chamadoId,
-      item,
-      quantidade: 1,
-      valor_unitario: 50,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(`Falha ao criar compra: ${error.message}`);
-  return data.id;
-}
-
-export async function limparDadosTeste() {
-  const allOrgIds = [...usedOrgs];
-  for (const orgId of allOrgIds) {
+async function limparTudo() {
+  for (const orgId of usedOrgs) {
     await ADMIN_CLIENT.from("movimentacoes_estoque").delete().eq("organization_id", orgId);
     await ADMIN_CLIENT.from("compras").delete().eq("organization_id", orgId);
     await ADMIN_CLIENT.from("os_atividades").delete().eq("organization_id", orgId);
     await ADMIN_CLIENT.from("os_servicos_externos").delete().eq("organization_id", orgId);
     await ADMIN_CLIENT.from("os_fotos").delete().eq("organization_id", orgId);
     await ADMIN_CLIENT.from("os_status_historico").delete().eq("organization_id", orgId);
+    await ADMIN_CLIENT.from("checklist_respostas").delete().eq("organization_id", orgId);
+    await ADMIN_CLIENT.from("checklist_execucoes").delete().eq("organization_id", orgId);
+    await ADMIN_CLIENT.from("checklist_modelos").delete().eq("organization_id", orgId);
     await ADMIN_CLIENT.from("auditoria_logs").delete().eq("organization_id", orgId);
     await ADMIN_CLIENT.from("chamados").delete().eq("organization_id", orgId);
     await ADMIN_CLIENT.from("ativos").delete().eq("organization_id", orgId);
     await ADMIN_CLIENT.from("produtos").delete().eq("organization_id", orgId);
     await ADMIN_CLIENT.from("fornecedores").delete().eq("organization_id", orgId);
-    await ADMIN_CLIENT.from("checklist_execucoes").delete().eq("organization_id", orgId);
-    await ADMIN_CLIENT.from("checklist_respostas").delete().eq("organization_id", orgId);
-    await ADMIN_CLIENT.from("checklist_modelos").delete().eq("organization_id", orgId);
     await ADMIN_CLIENT.from("memberships").delete().eq("organization_id", orgId);
-  }
-  for (const orgId of allOrgIds) {
     await ADMIN_CLIENT.from("organizations").delete().eq("id", orgId);
   }
-  const { data: users } = await ADMIN_CLIENT.auth.admin.listUsers();
+  const { data: users } = await ADMIN_CLIENT.auth.admin.listUsers({ perPage: 1000 });
   const testUsers = (users?.users ?? []).filter((u) =>
-    u.email?.endsWith("@sga-test.local")
+    u.email?.endsWith("@sga-test.local"),
   );
   for (const u of testUsers) {
     await ADMIN_CLIENT.auth.admin.deleteUser(u.id);
   }
   usedEmails.clear();
   usedOrgs.clear();
-}
-
-const usedOrgs = new Set<string>();
-
-export async function setupOrg(nome: string): Promise<TestOrg> {
-  const orgId = await criarOrganizacaoTeste(nome);
-  usedOrgs.add(orgId);
-  const { userId, email } = await criarUsuarioTeste(orgId);
-  await adicionarMembro(userId, orgId, "ADMIN");
-
-  const { data: sessionData } = await ADMIN_CLIENT.auth.admin.generateLink({
-    type: "magiclink",
-    email,
-  });
-
-  return {
-    client: createClient(SUPABASE_URL, SERVICE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
-      global: { headers: { Authorization: `Bearer ${sessionData?.properties?.href ?? ""}` } },
-    }),
-    orgId,
-    userId,
-    email,
-    slug: nome,
-  };
 }
 
 const ADMIN_CLIENT = createClient(SUPABASE_URL, SERVICE_KEY, {
@@ -223,15 +132,20 @@ const ADMIN_CLIENT = createClient(SUPABASE_URL, SERVICE_KEY, {
 beforeAll(() => {
   if (!SUPABASE_URL || !SERVICE_KEY) {
     throw new Error(
-      "Defina NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_KEY no .env.test"
+      "Defina NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_KEY no .env.test",
     );
+  }
+  if (!JWT_SECRET) {
+    console.warn("[setup] SUPABASE_JWT_SECRET não definido — testes RLS podem não funcionar.");
   }
 });
 
 afterEach(async () => {
-  await limparDadosTeste();
+  await limparTudo();
 });
 
 afterAll(async () => {
   await ADMIN_CLIENT.auth.signOut();
 });
+
+export { ADMIN_CLIENT };
