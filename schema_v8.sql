@@ -53,7 +53,9 @@ create policy "ash_insert" on public.ativo_status_historico
     and public.tem_papel(public.ativo_status_historico.organization_id, array['ADMIN', 'GESTOR', 'TECNICO'])
   );
 
--- ---------- 3. auditoria: nova ação QR_REGENERATED ----------
+-- ---------- 3. auditoria: ações canônicas (DROP + RECREATE) ----------
+-- A lista inclui TODAS as ações já usadas pelo sistema OU confirmadas
+-- nos dados de auditoria existentes. Nunca remover ações já presentes.
 do $$
 begin
   if exists (select 1 from pg_constraint where conname = 'auditoria_logs_acao_check') then
@@ -62,7 +64,20 @@ begin
 end
 $$;
 alter table public.auditoria_logs add constraint auditoria_logs_acao_check
-  check (acao in ('INSERT', 'UPDATE', 'DELETE', 'STATUS_CHANGE', 'LOGIN',
-    'LOGOUT', 'APPROVAL', 'REJECTION', 'STOCK_ENTRY', 'STOCK_EXIT',
-    'STOCK_ADJUSTMENT', 'MEMBERSHIP_CHANGE', 'ROLE_CHANGE', 'QR_REGENERATED',
-    'FOTO_ADICIONADA'));
+  check (acao in (
+    'INSERT', 'UPDATE', 'DELETE', 'STATUS_CHANGE',
+    'LOGIN', 'LOGOUT',
+    'APPROVAL', 'REJECTION',
+    'STOCK_ENTRY', 'STOCK_EXIT', 'STOCK_ADJUSTMENT',
+    'STOCK_RESERVED', 'STOCK_RELEASED', 'STOCK_CONSUMED', 'STOCK_TRANSFERRED',
+    'MEMBERSHIP_CHANGE', 'ROLE_CHANGE',
+    'QR_REGENERATED',
+    'TRIAGEM',
+    'OS_CREATED', 'OS_CONCLUIDA',
+    'CHECKLIST_CONCLUIDA',
+    'FOTO_ADICIONADA',
+    'COST_ADDED',
+    'REQUEST_CREATED', 'REQUEST_APPROVED', 'REQUEST_REJECTED',
+    'QUOTE_CREATED', 'ORDER_CREATED', 'ORDER_APPROVED',
+    'RECEIPT_CREATED', 'RECEIPT_ACCEPTED', 'RECEIPT_REJECTED'
+  ));

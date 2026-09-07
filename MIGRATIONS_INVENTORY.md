@@ -273,6 +273,92 @@ where routine_name = 'exec_as_user';
 
 ---
 
+## Canonical audit actions
+
+Lista **canônica** de ações aceitas por `auditoria_logs_acao_check`.
+Derivada do código fonte (`src/app/**/actions.ts`) + dados reais do banco.
+
+```
+INSERT
+UPDATE
+DELETE
+STATUS_CHANGE
+LOGIN
+LOGOUT
+APPROVAL
+REJECTION
+STOCK_ENTRY
+STOCK_EXIT
+STOCK_ADJUSTMENT
+STOCK_RESERVED
+STOCK_RELEASED
+STOCK_CONSUMED
+STOCK_TRANSFERRED
+MEMBERSHIP_CHANGE
+ROLE_CHANGE
+QR_REGENERATED
+TRIAGEM
+OS_CREATED
+OS_CONCLUIDA
+CHECKLIST_CONCLUIDA
+FOTO_ADICIONADA
+COST_ADDED
+REQUEST_CREATED
+REQUEST_APPROVED
+REQUEST_REJECTED
+QUOTE_CREATED
+ORDER_CREATED
+ORDER_APPROVED
+RECEIPT_CREATED
+RECEIPT_ACCEPTED
+RECEIPT_REJECTED
+```
+
+### Fontes confirmadas
+
+| Ação | Código fonte | Dados DB |
+|------|-------------|----------|
+| `INSERT/UPDATE/DELETE/STATUS_CHANGE` | todas actions | ✅ |
+| `LOGIN/LOGOUT` | `login/actions.ts` | ✅ |
+| `QR_REGENERATED` | `ativos/actions.ts` | ✅ |
+| `FOTO_ADICIONADA` | `chamados/[id]/actions.ts` | ✅ |
+| `APPROVAL/REJECTION` | — | ✅ 2 linhas |
+| `STOCK_ENTRY/EXIT/ADJUSTMENT` | — | ✅ |
+| `STOCK_CONSUMED` | — | ✅ 1 linha |
+| `MEMBERSHIP_CHANGE/ROLE_CHANGE` | `usuarios/actions.ts` | ✅ |
+| `TRIAGEM` | `chamados/[id]/actions.ts` | ✅ 1 linha |
+| `OS_CREATED` | `schema_v14.sql` (criar_os_a_partir_de_triagem) | ✅ 1 linha |
+| `OS_CONCLUIDA` | `chamados/[id]/actions.ts` | — |
+| `CHECKLIST_CONCLUIDA` | `checklists.ts` | — |
+| `COST_ADDED` | `chamados/[id]/actions.ts` | — |
+| `STOCK_TRANSFERRED` | `estoque/actions.ts` | — |
+| `REQUEST_CREATED` | `solicitacoes/actions.ts` | — |
+| `REQUEST_APPROVED/REJECTED` | código futuro | — |
+| `QUOTE_CREATED` | `solicitacoes/actions.ts` | — |
+| `ORDER_CREATED/APPROVED` | `pedidos/actions.ts` | — |
+| `RECEIPT_CREATED/ACCEPTED/REJECTED` | código futuro | — |
+| `STOCK_RESERVED/RELEASED` | código futuro | — |
+
+### Regra
+
+```
+dados reais existentes ⊆ ações na constraint
+```
+
+Se uma ação existe nos dados do banco, ela **deve** estar na constraint.
+Qualquer schema que recrie `auditoria_logs_acao_check` deve usar esta lista completa.
+**Nunca** criar constraint sem uma ação já presente nos dados.
+
+### v8/v10/v14 - história do bug
+
+| Versão | Antes (bug) | Depois (fix) |
+|--------|-------------|--------------|
+| v8 | faltavam: TRIAGEM, OS_CREATED, STOCK_CONSUMED, e ações da FASE 4 | lista canônica completa |
+| v10 | faltavam: STOCK_TRANSFERRED, CHECKLIST_CONCLUIDA, FASE 4 | lista canônica completa |
+| v14 | faltavam: STOCK_TRANSFERRED, ORDER_CREATED, REQUEST_CREATED, QUOTE_CREATED, FASE 4 | lista canônica completa |
+
+---
+
 ## 📋 Checklist de validação pós-aplicação
 
 - [ ] Todas as 16+ tabelas com RLS ativa
