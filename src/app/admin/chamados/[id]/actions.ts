@@ -391,7 +391,108 @@ export async function atualizarExecucao(
   return { ok: true };
 }
 
-/* ================= FASE 3 · O.S. ================= */
+/**
+ * TRIAGEM + CRIAÇÃO DE O.S. em operação única (composta).
+ *
+ * Fluxo para o caso "aberto" (UX → Backend):
+ *   aberto → em_triagem (clássica) → convertido_os (cria O.S. os_status=aberta)
+ *
+ * Para chamadas em "em_triagem" ou "aguardando_informacao", apenas faz a
+ * transição `em_triagem → convertido_os` (fluxo antigo). Para outros
+ * estados, retorna erro explicativo.
+ *
+ * Atomicidade: RPC `criar_os_a_partir_de_triagem` no PostgreSQL executa
+ * as duas transições e a classificação em uma única transação. Se algo
+ * falhar, o banco é revertido — sem estado parcial.
+ *
+ * Idempotente: o segundo clique encontra `os_status` preenchido e retorna
+ * `ok=true` sem duplicar nada (o `route` já converteu).
+ */
+export async function triagemECriarOS(input: {
+  chamadoId: string;
+  prioridade: string;
+  impacto: string | null;
+  criticidade: string;
+  categoria: string;
+  subcategoria: string;
+  departamento: string;
+  responsavel: string;
+  equipe: string;
+  prazo: string;
+  os_tipo: OsTipo;
+  motivo?: string;
+}): Promise<AcaoResult> {
+  const ctx = await requireOrg();
+  exigirPermissao(ctx, "chamados.triagem");
+  if (!input.chamadoId) return { ok: false, error: "Chamado inválido." };
+  if (!PRIORIDADES_OS.includes(input.prioridade)) return { ok: false, error: "Prioridade inválida." };
+  if (input.impacto !== null && !(input.impacto === "" || ["baixo", "medio", "alto", "critico", "parada_total"].includes(input.impacto))) {
+    return { ok: false, error: "Impacto inválido." };
+  }
+  if (input.criticidade !== "" && !CRITICIDADES.includes(input.criticidade)) {
+    return { ok: false, error: "Criticidade inválida." };
+  }
+  if (!OS_TIPOS.includes(input.os_tipo)) {
+    return { ok: false, error: "Tipo de O.S. inválido." };
+  }
+
+  const supabase = await createClient();
+  // Leitura inicial para validar estado atual sem perder a atomicidade da
+  // escrita (a RPC revalida dentro de sua transação e aborta se mudou).
+  const { data: atual } = await supabase
+    .from("chamados")
+    .select("status, os_status")
+    .eq("id", input.chamadoId)
+    .eq("organization_id", ctx.orgId)
+    .maybeSingle();
+  if (!atual) return { ok: false, error: "Chamado não encontrado." };
+  const st = atual as { status: string; os_status: string | null };
+  if (st.os_status) {
+    return { ok: false, error: "Esta solicitação já foi convertida em O.S." };
+  }
+  if (!["aberto", "em_triagem", "aguardando_informacao"].includes(st.status)) {
+    return { ok: false, error: `Não é possível criar O.S. a partir de "${st.status}".` };
+  }
+
+  const { data, error } = await supabase.rpc("criar_os_a_partir_de_triagem", {
+    p_chamado_id: input.chamadoId,
+    p_organization_id: ctx.orgId,
+    p_user_id: ctx.userId,
+    p_executado_por: ctx.email,
+    p_prioridade: input.prioridade,
+    p_impacto: input.impacto === "" ? null : input.impacto,
+    p_criticidade: input.criticidade === "" ? null : input.criticidade,
+    p_categoria: texto(input.categoria, 80),
+    p_subcategoria: texto(input.subcategoria, 80),
+    p_departamento: texto(input.departamento, 80),
+    p_responsavel: texto(input.responsavel, 120),
+    p_equipe: texto(input.equipe, 120),
+    p_prazo: /^\d{4}-\d{2}-\d{2}$/.test(input.prazo) ? input.prazo : null,
+    p_os_tipo: input.os_tipo,
+    p_motivo: texto(input.motivo, 300),
+  });
+  if (error) {
+    return { ok: false, error: "Não foi possível criar a O.S. Tente novamente." };
+  }
+  // A RPC valida idempotência: se o chamado já havia sido convertido entre
+  // a leitura inicial e a RPC, retorna flag `ja_convertido`.
+  const payload = (data ?? null) as { ok: boolean; ja_convertido?: boolean; message?: string } | null;
+  if (payload && payload.ja_convertido) {
+    return { ok: false, error: "Esta solicitação já foi convertida em O.S." };
+  }
+  if (payload && !payload.ok) {
+    return { ok: false, error: payload.message ?? "Não foi possível criar a O.S. Tente novamente." };
+  }
+
+  await notificar({
+    tipo: "os",
+    titulo: "O.S. criada",
+    descricao: `Triagem + criação por ${ctx.email}.`,
+    link: `/admin/chamados/${input.chamadoId}`,
+  });
+  revalidarChamado(input.chamadoId);
+  return { ok: true };
+}
 
 const PRIORIDADES_OS = ["baixa", "media", "alta", "critica"];
 const CRITICIDADES = ["baixa", "media", "alta", "critica"];

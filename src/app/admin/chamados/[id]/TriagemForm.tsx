@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ClipboardCheck, LoaderCircle, TriangleAlert } from "lucide-react";
 import type { ChamadoStatus, OsTipo } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { atualizarStatus, triarChamado } from "./actions";
+import { atualizarStatus, triarChamado, triagemECriarOS } from "./actions";
 
 const PROXIMOS: Record<string, { id: string; rotulo: string }[]> = {
   aberto: [
@@ -104,7 +104,28 @@ export default function TriagemForm({
     setErro(null);
     setSalvando(`triagem-${decisao}`);
     try {
-      const r = await triarChamado({ chamadoId, ...f, decisao });
+      let r: { ok: true } | { ok: false; error: string };
+      if (decisao === "os" && statusAtual === "aberto") {
+        // Fluxo composto: aberto → em_triagem → convertido_os + O.S. em
+        // uma única operação (RPC atômica). Evita o erro
+        // "Transição inválida: aberto → convertido_os".
+        r = await triagemECriarOS({
+          chamadoId,
+          prioridade: f.prioridade,
+          impacto: f.impacto,
+          criticidade: f.criticidade,
+          categoria: f.categoria,
+          subcategoria: f.subcategoria,
+          departamento: f.departamento,
+          responsavel: f.responsavel,
+          equipe: f.equipe,
+          prazo: f.prazo,
+          os_tipo: f.os_tipo,
+          motivo: f.motivo,
+        });
+      } else {
+        r = await triarChamado({ chamadoId, ...f, decisao });
+      }
       if (!r.ok) throw new Error(r.error);
       router.refresh();
     } catch (err) {
