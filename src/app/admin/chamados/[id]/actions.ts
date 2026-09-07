@@ -1104,6 +1104,10 @@ export async function encerrarOS(input: { chamadoId: string }): Promise<AcaoResu
     .maybeSingle();
   if (!ch) return { ok: false, error: "O.S. não encontrada." };
   const os = ch as { os_status: string | null; plano_id: string | null };
+  // Bloqueia encerramento se validação ainda pendente
+  if (os.os_status === "em_validacao") {
+    return { ok: false, error: "Leve a O.S. para validação antes de encerrar." };
+  }
   if (os.os_status !== "concluida") {
     return { ok: false, error: "Só O.S. concluída pode ser encerrada." };
   }
