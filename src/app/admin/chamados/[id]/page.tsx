@@ -130,16 +130,9 @@ const [
     .eq("organization_id", ctx.orgId)
     .eq("tipo", "consumo")
     .order("created_at", { ascending: true }),
-    supabase
-      .from("movimentacoes_estoque")
-      .select("*, produtos(id, codigo, descricao, unidade, custo_medio)")
-      .eq("chamado_id", id)
-      .eq("organization_id", ctx.orgId)
-      .eq("tipo", "consumo")
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("produtos")
-      .select("id, codigo, descricao, estoque_atual, estoque_reservado")
+  supabase
+    .from("produtos")
+    .select("id, codigo, descricao, estoque_atual, estoque_reservado")
       .eq("organization_id", ctx.orgId)
       .eq("ativo", true)
       .order("codigo", { ascending: true }),
