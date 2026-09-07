@@ -565,7 +565,7 @@ export default function EstoqueClient({
                           </label>
                         </div>
                         <label className="block">
-                          <span className="text-xs font-bold text-zinc-700">Fornecedor principal</span>
+                          <span className="text-xs font-bold text-zinc-700">Fornecedor</span>
                           <select value={vincForn} onChange={(e) => setVincForn(e.target.value)} className={`${campo} mt-1`}>
                             <option value="">— Nenhum —</option>
                             {fornecedores.map((f) => (
@@ -576,7 +576,7 @@ export default function EstoqueClient({
                         <div className="flex flex-wrap gap-4">
                           <label className="flex items-center gap-2 text-sm font-bold text-zinc-700">
                             <input type="checkbox" checked={vincPrincipal} onChange={(e) => setVincPrincipal(e.target.checked)} className="size-4 accent-zinc-900" />
-                            Fornecedor principal
+                            Definir como principal
                           </label>
                           <label className="flex items-center gap-2 text-sm font-bold text-zinc-700">
                             <input type="checkbox" checked={editAtivo} onChange={(e) => setEditAtivo(e.target.checked)} className="size-4 accent-zinc-900" />
