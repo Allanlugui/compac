@@ -84,6 +84,10 @@ export default function EstoqueClient({
   const [minimo, setMinimo] = useState("0");
   const [reposicao, setReposicao] = useState("0");
   const [categoriaId, setCategoriaId] = useState("");
+  const [subcategoria, setSubcategoria] = useState("");
+  const [localNovo, setLocalNovo] = useState("");
+  const [fornecedorNovoId, setFornecedorNovoId] = useState("");
+  const [custoNovo, setCustoNovo] = useState("0");
   const [salvandoProd, setSalvandoProd] = useState(false);
 
   // Edição
@@ -176,11 +180,11 @@ export default function EstoqueClient({
     try {
       const r = await criarProduto({
         codigo, descricao, categoria: "", unidade,
-        minimo: Number(minimo), maximo: null, localizacao: "", custo: 0,
-        sku, pontoReposicao: Number(reposicao), categoriaId: categoriaId || null,
+        minimo: Number(minimo), maximo: null, localizacao: localNovo, custo: Number(custoNovo),
+        sku, subcategoria, pontoReposicao: Number(reposicao), categoriaId: categoriaId || null, fornecedorId: fornecedorNovoId || null,
       });
       if (!r.ok) throw new Error(r.error);
-      setCodigo(""); setDescricao(""); setSku(""); setMinimo("0"); setReposicao("0"); setCategoriaId("");
+      setCodigo(""); setDescricao(""); setSku(""); setMinimo("0"); setReposicao("0"); setCategoriaId(""); setSubcategoria(""); setLocalNovo(""); setFornecedorNovoId(""); setCustoNovo("0");
       router.refresh();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Falha inesperada.");
@@ -377,9 +381,9 @@ export default function EstoqueClient({
               <PackagePlus className="size-4" /> Novo produto
             </h3>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <input aria-label="Código" required minLength={2} maxLength={40} placeholder="Código *" value={codigo} onChange={(e) => setCodigo(e.target.value.toUpperCase())} disabled={salvandoProd} className={campo} />
-              <input aria-label="Descrição" required minLength={2} maxLength={160} placeholder="Descrição *" value={descricao} onChange={(e) => setDescricao(e.target.value)} disabled={salvandoProd} className={`${campo} sm:col-span-2`} />
-              <input aria-label="SKU" maxLength={40} placeholder="SKU" value={sku} onChange={(e) => setSku(e.target.value.toUpperCase())} disabled={salvandoProd} className={campo} />
+              <input aria-label="Código" required minLength={2} maxLength={40} placeholder="Código * (ex: 884116412519)" value={codigo} onChange={(e) => setCodigo(e.target.value.toUpperCase())} disabled={salvandoProd} className={campo} />
+              <input aria-label="Descrição" required minLength={2} maxLength={160} placeholder="Descrição * (ex: Dell Notebook Latitude 7000)" value={descricao} onChange={(e) => setDescricao(e.target.value)} disabled={salvandoProd} className={`${campo} sm:col-span-2`} />
+              <input aria-label="SKU" maxLength={40} placeholder="SKU (opcional)" value={sku} onChange={(e) => setSku(e.target.value.toUpperCase())} disabled={salvandoProd} className={campo} />
               <select aria-label="Unidade" value={unidade} onChange={(e) => setUnidade(e.target.value)} disabled={salvandoProd} className={campo}>
                 {unidades.map((u) => (
                   <option key={u.sigla} value={u.sigla}>{u.sigla} — {u.nome}</option>
@@ -391,8 +395,17 @@ export default function EstoqueClient({
                   <option key={c.id} value={c.id}>{c.nome}</option>
                 ))}
               </select>
-              <input aria-label="Estoque mínimo" type="number" min="0" step="0.01" placeholder="Mínimo" value={minimo} onChange={(e) => setMinimo(e.target.value)} disabled={salvandoProd} className={campo} />
-              <input aria-label="Ponto de reposição" type="number" min="0" step="0.01" placeholder="Reposição" value={reposicao} onChange={(e) => setReposicao(e.target.value)} disabled={salvandoProd} className={campo} />
+              <input aria-label="Subcategoria" maxLength={80} placeholder="Subcategoria" value={subcategoria} onChange={(e) => setSubcategoria(e.target.value)} disabled={salvandoProd} className={campo} />
+              <input aria-label="Localização" maxLength={160} placeholder="Localização (ex: Almoxarifado principal)" value={localNovo} onChange={(e) => setLocalNovo(e.target.value)} disabled={salvandoProd} className={campo} />
+              <select aria-label="Fornecedor" value={fornecedorNovoId} onChange={(e) => setFornecedorNovoId(e.target.value)} disabled={salvandoProd} className={campo}>
+                <option value="">Fornecedor…</option>
+                {fornecedores.map((f) => (
+                  <option key={f.id} value={f.id}>{f.nome}</option>
+                ))}
+              </select>
+              <input aria-label="Custo unit." type="number" min="0" step="0.01" placeholder="Custo R$ (ex: 2250,00)" value={custoNovo} onChange={(e) => setCustoNovo(e.target.value)} disabled={salvandoProd} className={campo} />
+              <input aria-label="Estoque mínimo" type="number" min="0" step="0.01" placeholder="Mínimo (ex: 1)" value={minimo} onChange={(e) => setMinimo(e.target.value)} disabled={salvandoProd} className={campo} />
+              <input aria-label="Ponto de reposição" type="number" min="0" step="0.01" placeholder="Reposição (ex: 2)" value={reposicao} onChange={(e) => setReposicao(e.target.value)} disabled={salvandoProd} className={campo} />
             </div>
             <button type="submit" disabled={salvandoProd} className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-6 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
               {salvandoProd && <LoaderCircle className="size-4 animate-spin" />}
@@ -477,7 +490,10 @@ export default function EstoqueClient({
                         <tr key={p.id} className={cn("hover:bg-zinc-50", !p.ativo && "bg-zinc-50/60 opacity-60", critico && "bg-red-50/40")}>
                           <td className="whitespace-nowrap px-3 py-2 font-mono text-xs font-bold">{p.codigo}</td>
                           <td className="max-w-[260px] truncate px-3 py-2 font-medium" title={p.descricao}>{p.descricao}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-xs">{categoriaNome(p.categoria_id)}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-xs">
+                            <div>{categoriaNome(p.categoria_id)}</div>
+                            {p.subcategoria && <div className="text-[11px] text-zinc-400">{p.subcategoria}</div>}
+                          </td>
                           <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">
                             <div>{p.sku ?? "—"}</div>
                             {p.codigo_fornecedor && <div className="text-[11px] text-zinc-400">Forn: {p.codigo_fornecedor}</div>}
