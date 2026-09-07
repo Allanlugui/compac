@@ -64,4 +64,5 @@ $$;
 alter table public.auditoria_logs add constraint auditoria_logs_acao_check
   check (acao in ('INSERT', 'UPDATE', 'DELETE', 'STATUS_CHANGE', 'LOGIN',
     'LOGOUT', 'APPROVAL', 'REJECTION', 'STOCK_ENTRY', 'STOCK_EXIT',
-    'STOCK_ADJUSTMENT', 'MEMBERSHIP_CHANGE', 'ROLE_CHANGE', 'QR_REGENERATED'));
+    'STOCK_ADJUSTMENT', 'MEMBERSHIP_CHANGE', 'ROLE_CHANGE', 'QR_REGENERATED',
+    'FOTO_ADICIONADA'));
