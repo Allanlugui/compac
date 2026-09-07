@@ -230,3 +230,21 @@ export function getPeriodoRangeBRT(
   const fim = addDaysUTC(hojeBRTMidnightUTC, 1);
   return { inicio, fim };
 }
+
+// ---------------------------------------------------------------------------
+// Disponibilidade — BLOCO A: estrutura pronta, sem cálculo falso
+// ---------------------------------------------------------------------------
+
+export function calcDisponibilidade(
+  historico: { status: string; created_at: string }[],
+  periodo: { inicio: Date; fim: Date },
+): { value: number | null; state: "ok" | "insufficient_data" } {
+  if (historico.length === 0) return { value: null, state: "insufficient_data" };
+  // Se não há histórico cobrindo o início do período, não assumir Operacional
+  const primeiro = historico[0];
+  if (new Date(primeiro.created_at) > periodo.inicio) {
+    return { value: null, state: "insufficient_data" };
+  }
+  // Cálculo real seria SUM(tempo disponível)/tempo total — não implementado no BLOCO A
+  return { value: null, state: "insufficient_data" };
+}

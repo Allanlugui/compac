@@ -224,6 +224,14 @@ describe("Analytics — Disponibilidade", () => {
     expect(temHistorico).toBe(false);
     // disponibilidade = null (insufficient_data), não 1
   });
+
+  it("calcDisponibilidade sem histórico → insufficient_data", async () => {
+    const { calcDisponibilidade } = await import("@/lib/analytics");
+    const periodo = { inicio: new Date("2026-09-01T03:00:00Z"), fim: new Date("2026-09-30T03:00:00Z") };
+    const r = calcDisponibilidade([], periodo);
+    expect(r.state).toBe("insufficient_data");
+    expect(r.value).toBeNull();
+  });
 });
 
 describe("Analytics — Períodos", () => {

@@ -1,10 +1,11 @@
 # SGA-M — ANALYTICS SPEC
 
-**Versão:** BLOCO A — FASE 5 — Contrato Analítico (complemento 2026-09-07)
+**Versão:** BLOCO A — FASE 5 — Contrato Analítico (complemento 2026-09-07 — 15 KPIs)
 **Data:** 2026-09-07
 **Timezone:** `America/Sao_Paulo` (IANA) — Banco em `UTC` (`timestamptz`), apresentação em `America/Sao_Paulo` via `Intl.DateTimeFormat` / `toLocaleString`. Conversões de período usam `America/Sao_Paulo`, não offset hardcoded.
 **Tenant:** `organization_id` via `requireOrg() → ctx.orgId` (JWT), validado por RLS `eh_membro()` / `tem_papel()`. Nunca `req.query.organization_id`.
-**Períodos padrão:** `Hoje` (00:00–23:59 America/Sao_Paulo), `7d`, `30d`, `90d`, `12m`, `Personalizado` (inclusivo no início, exclusivo no fim: `[inicio, fim)`).
+**Períodos padrão:** `Hoje` (00:00–23:59 America/Sao_Paulo), `7d`, `30d` (padrão do dashboard), `90d`, `12m`, `Personalizado` (inclusivo no início, exclusivo no fim: `[inicio, fim)`).
+**KPIs:** 15 definidos, 13 implementáveis, 2 condicionais (`MTBF`, `Disponibilidade` → `insufficient_data` quando sem histórico)
 
 > **Dados fictícios proibidos.** Em ambiente vazio ou sem dados suficientes: `Sem dados suficientes` (não `0` quando `0` ≠ `NULL`).
 
@@ -543,16 +544,85 @@ WHERE created_at >= $inicio_utc AND created_at < $fim_utc
 - **Exclusões:** `os_tipo != 'corretiva'` não conta.
 - **Teste:** Bomba 14 hidráulica D0 e D30 → reincidência; elétrica → não.
 
-### KPI-13 — Top Ativos por O.S.
+### KPI-13 — Top Ativos (3 rankings derivados)
 
-- **Fonte:** `chamados.ativo_id`
-- **Fórmula:** `SELECT ativo_id, count(*) as qtd GROUP BY ativo_id ORDER BY qtd DESC LIMIT 5`.
-- **Teste:** A 5, B 3, C 1 → top A.
+- **Top ativos por número de O.S.:** `SELECT ativo_id, count(*) as qtd GROUP BY ativo_id ORDER BY qtd DESC LIMIT 10` where `os_status IS NOT NULL` e `created_at in [periodo)`.
+- **Top ativos por custo:** `SELECT ativo_id, SUM(custo_os) as custo GROUP BY ativo_id ORDER BY custo DESC LIMIT 10` (custo_os = KPI-09).
+- **Top ativos por reincidência:** `SELECT ativo_id, count(*) as reincidencias where isReincidencia(...) GROUP BY ativo_id ORDER BY reincidencias DESC LIMIT 10`.
+
+Cada ranking com **período** (padrão 30d), **métrica**, **ordem DESC**, **limite 10**. Não misturar critérios.
+
+**Teste:** A 5 O.S., B 3, C 1 → top por O.S. = A; A custo 500, B 300 → top por custo = A.
 
 ### KPI-14 — Consumo por Produto
 
 - **Fonte:** `movimentacoes_estoque` where `tipo='consumo'`
-- **Fórmula:** `SELECT produto_id, SUM(quantidade) GROUP BY produto_id`.
+- **Fórmulas:**
+  - **Quantidade consumida (principal):** `SELECT produto_id, SUM(quantidade) as qtd GROUP BY produto_id`
+  - **Valor consumido (financeiro):** `SELECT produto_id, SUM(quantidade * custo_unitario) as valor GROUP BY produto_id`
+- **Resultado conceitual:** `Produto | Quantidade | Valor` — fonte é consumo real, não compra.
+- **Teste:** produto P com 2 consumos 5+3 → quantidade 8, valor 8*10=80.
+
+### KPI-15 — Disponibilidade do Ativo
+
+- **Nome exibido:** Disponibilidade
+- **Nome técnico:** `disponibilidade`
+- **Descrição:** `tempo_disponível / tempo_total_observável` no período.
+- **Fonte:** `ativo_status_historico` (append-only, `de`, `para`, `created_at`) — ou `os_status_historico` + `data_inicio/data_fim` se histórico de ativo incompleto.
+- **Fórmula:** `disponibilidade = 1 - (SUM(tempo_indisponível) / tempo_total)` onde `tempo_indisponível` = períodos com `para in ('parado','em_manutencao')` ou O.S. `em_execucao`.
+- **Reconstrução:** ordenar histórico por `created_at`, intervalos `[created_at[i], created_at[i+1])` com `status = para[i]`, limitar por `[inicio_periodo, fim_periodo)`. Se no `inicio_periodo` não há estado conhecido → **não assumir Operacional** → `Disponibilidade = { value: null, state: "insufficient_data" }`.
+- **Requisito:** histórico contínuo cobrindo ≥80% do período. Se não, `Dados insuficientes`.
+- **Exemplo:** período 30d, ativo parado 3d → `disponibilidade = 27/30 = 90%`.
+- **Teste:** sem histórico → `{ value: null, state: "insufficient_data" }` (não `0%`).
+- **Implementação:** **Não** calcular valor falso no BLOCO B; deixar camada pronta (`queries.ts` com `queryDisponibilidade` retornando `insufficient_data` quando sem histórico) sem mudar contrato API.
+
+---
+
+## 16.1 Período Padrão do Dashboard
+
+**Período padrão = últimos 30 dias** (`30d` = `[00:00 hoje-29, 00:00 amanhã)` America/Sao_Paulo).
+
+Filtros disponíveis: `7 dias`, `30 dias` (padrão), `90 dias`, `12 meses`, `Personalizado`.
+
+Todos os widgets respeitam o mesmo filtro global, salvo indicação explícita (ex: "Top ativos — 90d" com badge).
+
+## 16.2 Hierarquia Visual do Dashboard (BLOCO B)
+
+**Nível 1 — Saúde operacional (topo, cards grandes):** `O.S. abertas`, `Backlog`, `SLA`, `Ativos críticos`
+**Nível 2 — Eficiência:** `TTR/MTTR`, `Reincidência`, `Preventiva` (`Em dia/Próxima/Atrasada`), `MTBF`*, `Disponibilidade`*
+**Nível 3 — Recursos:** `Estoque crítico`, `Consumo`, `Solicitações pendentes`, `Compras`
+**Nível 4 — Custos:** `Custo de manutenção`, `Custo por ativo`, `Custo por localização`
+
+`* MTBF/Disponibilidade mostram "Sem dados suficientes" quando condicionais.`
+
+O usuário entende primeiro "como está a operação", depois "por que", depois "quanto custa".
+
+## 16.3 Estados do Dashboard
+
+Todo widget suporta: `loading` (skeleton), `ok` (valor), `empty` (0 válido), `insufficient_data` (Sem dados suficientes), `no_deadline` (Sem prazo), `error` (falha na query).
+
+Não usar apenas `0` para todos os estados.
+
+## 16.4 KPI + Contexto (drill-down)
+
+Todo KPI com significado operacional permite drill-down:
+
+- `O.S. atrasadas: 8` → clique → `relatório filtrado` → lista das 8 O.S. → `ficha da O.S.`
+- `Ativos críticos: 3` → lista dos 3 ativos → `ficha do ativo`
+- `Estoque crítico: 12` → produtos correspondentes → `ficha do produto`
+
+Não criar números sem caminho para os dados.
+
+## 16.5 Consistência, Tenant, Role, Gráficos, Cores, Responsivo, Cache, Precisão
+
+- **Consistência:** Dashboard, relatório, exportação consomem `src/lib/analytics/queries.ts` + `calculations.ts` (mesma query, mesmo `value`/`state`). Teste compara `getMTTR(dashboard) === getMTTR(report)`.
+- **Tenant:** `organization_id` via `requireOrg()`, nunca query string. RLS `eh_membro` garante isolamento mesmo se `ctx` falhar.
+- **Role:** `ADMIN/GESTOR` → organização inteira; `TECNICO` → dados permitidos; `COMPRAS` → suprimentos; `AUDITOR` → conformidade; `SOLICITANTE` → próprio escopo. Não expor indicador incompatível.
+- **Gráficos:** cada gráfico responde uma pergunta (ex: "O.S. aumentaram?" → série temporal; "Qual categoria mais gera?" → barras). Não gráfico decorativo.
+- **Cores:** não usar cor como única representação (ex: `● Atrasado` + texto, não só vermelho).
+- **Responsivo:** Mobile prioriza `O.S. abertas`, `SLA`, `Minhas O.S.`, `Alertas`, `Estoque crítico` (vertical, drill-down); Tablet 2 colunas + drawer; Desktop cards + gráficos + tabelas + filtros globais.
+- **Cache:** se houver cache, chave = `organization_id + filtros + role + período` (nunca global).
+- **Precisão:** Banco `UTC`, apresentação `America/Sao_Paulo` via camada analítica, não conversão manual em componentes.
 
 ---
 
