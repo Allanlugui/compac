@@ -1,335 +1,409 @@
 import type { Metadata } from "next";
-import { Clock, Ticket, Wallet } from "lucide-react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import type { ChamadoStatus, Compra } from "@/lib/types";
+import { formatarData, formatarMoeda, formatarDuracaoMedia } from "@/lib/format";
+import type { PeriodoId } from "@/lib/analytics/types";
 import {
-  formatarData,
-  formatarDuracaoMedia,
-  formatarMoeda,
-  rotuloMes,
-} from "@/lib/format";
-import { cn } from "@/lib/utils";
-import FiltrosPeriodo from "./FiltrosPeriodo";
-import GraficosRelatorio, {
-  type FatiaSetor,
-  type LinhaRanking,
-  type PontoMensal,
-} from "./GraficosRelatorio";
-import BotaoImprimirRelatorio from "./BotaoImprimirRelatorio";
+  queryAtivosCriticos,
+  queryAtivosPorStatus,
+  queryBacklogOS,
+  queryConsumoPorProduto,
+  queryCustoTotal,
+  queryDisponibilidade,
+  queryEstoqueResumo,
+  queryMTTR,
+  queryMTBF,
+  queryOSAbetas,
+  querySLA,
+  querySolicitacoesPendentes,
+  queryTempoExecucao,
+  queryTopAtivos,
+  queryTopAtivosPorCusto,
+  queryTopAtivosPorReincidencia,
+  queryTotalAtivos,
+} from "@/lib/analytics/queries";
+import ExportButtons from "./ExportButtons";
 
-export const metadata: Metadata = {
-  title: "Relatórios · SGA-M",
-  description: "Central de relatórios gerenciais de manutenção e compras.",
-};
+export const metadata: Metadata = { title: "Relatórios · SGA-M" };
 
-interface RelatoriosProps {
-  searchParams: Promise<{ inicio?: string; fim?: string }>;
-}
+const ABAS = [
+  { id: "executivo", rotulo: "Executivo" },
+  { id: "ativos", rotulo: "Ativos" },
+  { id: "manutencao", rotulo: "Manutenção" },
+  { id: "sla", rotulo: "SLA" },
+  { id: "custos", rotulo: "Custos" },
+  { id: "estoque", rotulo: "Estoque" },
+  { id: "solicitacoes", rotulo: "Solicitações" },
+  { id: "top", rotulo: "Top Ativos" },
+] as const;
 
-interface ChamadoRelatorio {
-  id: string;
-  status: ChamadoStatus;
-  created_at: string;
-  concluido_em: string | null;
-  prazo: string | null;
-  ativos: { nome: string } | { nome: string }[] | null;
-}
+type AbaId = (typeof ABAS)[number]["id"];
 
-function nomeDoAtivo(ativos: ChamadoRelatorio["ativos"]): string {
-  if (!ativos) return "Ativo removido";
-  if (Array.isArray(ativos)) return ativos[0]?.nome ?? "Ativo removido";
-  return ativos.nome;
-}
+const PERIODOS: { id: PeriodoId; rotulo: string }[] = [
+  { id: "7d", rotulo: "7 dias" },
+  { id: "30d", rotulo: "30 dias" },
+  { id: "90d", rotulo: "90 dias" },
+  { id: "12m", rotulo: "12 meses" },
+];
 
-const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
-
-function paraISO(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/** Chaves "YYYY-MM" entre dois meses (inclusive). */
-function mesesNoIntervalo(inicio: string, fim: string): string[] {
-  const chaves: string[] = [];
-  let ano = Number(inicio.slice(0, 4));
-  let mes = Number(inicio.slice(5, 7));
-  const anoFim = Number(fim.slice(0, 4));
-  const mesFim = Number(fim.slice(5, 7));
-  while (ano < anoFim || (ano === anoFim && mes <= mesFim)) {
-    chaves.push(`${ano}-${String(mes).padStart(2, "0")}`);
-    mes += 1;
-    if (mes > 12) {
-      mes = 1;
-      ano += 1;
-    }
-  }
-  return chaves;
-}
-
-export default async function RelatoriosPage({ searchParams }: RelatoriosProps) {
-  const params = await searchParams;
-
-  const hoje = new Date();
-  const padraoFim = paraISO(hoje);
-  const padraoInicio = paraISO(
-    new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1),
+function KpiCard({
+  titulo,
+  valor,
+  sub,
+  href,
+  estado,
+}: {
+  titulo: string;
+  valor: React.ReactNode;
+  sub?: string;
+  href?: string;
+  estado?: string;
+}) {
+  const content = (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">{titulo}</p>
+      <p className="mt-2 text-2xl font-black tabular-nums">
+        {estado === "insufficient_data" ? <span className="text-sm font-medium text-amber-700">Dados insuficientes</span> : estado === "no_deadline" ? <span className="text-sm text-zinc-500">Sem prazo</span> : valor}
+      </p>
+      {sub && <p className="mt-1 text-xs text-zinc-500">{sub}</p>}
+    </div>
   );
+  if (href) {
+    return (
+      <Link href={href} className="block hover:shadow-md">
+        {content}
+      </Link>
+    );
+  }
+  return content;
+}
 
-  let inicio =
-    params.inicio && DATA_ISO.test(params.inicio) ? params.inicio : padraoInicio;
-  let fim = params.fim && DATA_ISO.test(params.fim) ? params.fim : padraoFim;
-  if (fim < inicio) [inicio, fim] = [fim, inicio];
+export default async function RelatoriosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ periodo?: string; aba?: string }>;
+}) {
+  const sp = await searchParams;
+  const periodo = (["7d", "30d", "90d", "12m"].includes(sp.periodo ?? "") ? sp.periodo : "30d") as PeriodoId;
+  const aba = (ABAS.some((a) => a.id === sp.aba) ? sp.aba : "executivo") as AbaId;
 
   const supabase = await createClient();
   const ctx = await requireOrg();
-  const [{ data: chamadosData }, { data: comprasData }] = await Promise.all([
-    supabase
-      .from("chamados")
-      .select("id, status, created_at, concluido_em, prazo, ativos(id, nome)")
-      .eq("organization_id", ctx.orgId)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("compras")
-      .select("*")
-      .eq("organization_id", ctx.orgId)
-      .order("data_compra", { ascending: true }),
+  const qctx = { supabase, orgId: ctx.orgId, periodo };
+
+  const [
+    totalAtivos,
+    porStatus,
+    criticos,
+    disponibilidade,
+    osAbertas,
+    backlog,
+    sla,
+    mttr,
+    texec,
+    mtbf,
+    estoque,
+    solicitacoes,
+    topOS,
+    topCusto,
+    topReinc,
+    consumo,
+    custoTotal,
+  ] = await Promise.all([
+    queryTotalAtivos(qctx),
+    queryAtivosPorStatus(qctx),
+    queryAtivosCriticos(qctx),
+    queryDisponibilidade(qctx),
+    queryOSAbetas(qctx),
+    queryBacklogOS(qctx),
+    querySLA(qctx),
+    queryMTTR(qctx),
+    queryTempoExecucao(qctx),
+    queryMTBF(qctx),
+    queryEstoqueResumo(qctx),
+    querySolicitacoesPendentes(qctx),
+    queryTopAtivos(qctx, 10),
+    queryTopAtivosPorCusto(qctx, 10),
+    queryTopAtivosPorReincidencia(qctx, 10),
+    queryConsumoPorProduto(qctx, 10),
+    queryCustoTotal(qctx),
   ]);
 
-  const noPeriodo = (dataISO: string) => dataISO >= inicio && dataISO <= fim;
-
-  const chamados = ((chamadosData ?? []) as unknown as ChamadoRelatorio[]).filter(
-    (c) => noPeriodo(c.created_at.slice(0, 10)),
-  );
-  const compras = ((comprasData ?? []) as Compra[]).filter((c) =>
-    noPeriodo(c.data_compra.slice(0, 10)),
-  );
-
-  // ---------- KPIs (concluído = legado + resolvido) ----------
-  const concluidos = chamados.filter(
-    (c) => (c.status === "concluido" || c.status === "resolvido") && c.concluido_em,
-  );
-  const tempos = concluidos
-    .map((c) => +new Date(c.concluido_em as string) - +new Date(c.created_at))
-    .filter((ms) => Number.isFinite(ms) && ms >= 0);
-  const tempoMedioMs =
-    tempos.length > 0 ? tempos.reduce((a, b) => a + b, 0) / tempos.length : NaN;
-  const gastosTotais = compras.reduce(
-    (soma, c) => soma + Number(c.valor_total ?? 0),
-    0,
-  );
-
-  // ---------- SLA e distribuição por status (dados reais) ----------
-  const porStatus: Record<string, number> = { aberto: 0, em_andamento: 0, concluido: 0 };
-  for (const c of chamados) porStatus[c.status] = (porStatus[c.status] ?? 0) + 1;
-  const comPrazo = concluidos.filter((c) => c.prazo);
-  const noPrazo = comPrazo.filter(
-    (c) => (c.concluido_em as string).slice(0, 10) <= (c.prazo as string),
-  );
-  const sla = comPrazo.length > 0 ? Math.round((noPrazo.length / comPrazo.length) * 100) : NaN;
-
-  // ---------- Evolução mensal dos gastos ----------
-  const meses = mesesNoIntervalo(inicio, fim);
-  const gastosPorMes = new Map<string, number>(meses.map((m) => [m, 0]));
-  for (const c of compras) {
-    const chave = c.data_compra.slice(0, 7);
-    gastosPorMes.set(chave, (gastosPorMes.get(chave) ?? 0) + Number(c.valor_total ?? 0));
-  }
-  const gastosMes: PontoMensal[] = meses.map((m) => ({
-    mes: rotuloMes(m),
-    total: Math.round((gastosPorMes.get(m) ?? 0) * 100) / 100,
-  }));
-
-  // ---------- Despesas por setor ----------
-  const porSetor = new Map<string, number>();
-  for (const c of compras) {
-    const setor = c.setor?.trim() || "Sem setor";
-    porSetor.set(setor, (porSetor.get(setor) ?? 0) + Number(c.valor_total ?? 0));
-  }
-  const gastosSetor: FatiaSetor[] = [...porSetor.entries()]
-    .map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
-
-  // ---------- Ranking de ativos problemáticos ----------
-  const porAtivo = new Map<string, number>();
-  for (const c of chamados) {
-    const nome = nomeDoAtivo(c.ativos);
-    porAtivo.set(nome, (porAtivo.get(nome) ?? 0) + 1);
-  }
-  const ranking: LinhaRanking[] = [...porAtivo.entries()]
-    .map(([nome, total]) => ({
-      name: nome.length > 24 ? `${nome.slice(0, 23)}…` : nome,
-      chamados: total,
-    }))
-    .sort((a, b) => b.chamados - a.chamados)
-    .slice(0, 8);
-
-  // ---------- Tabela consolidada mensal (visão de supervisão) ----------
-  const abertosPorMes = new Map<string, number>();
-  const concluidosPorMes = new Map<string, number>();
-  for (const c of chamados) {
-    const chave = c.created_at.slice(0, 7);
-    abertosPorMes.set(chave, (abertosPorMes.get(chave) ?? 0) + 1);
-    if (c.status === "concluido" && c.concluido_em) {
-      const chaveC = c.concluido_em.slice(0, 7);
-      concluidosPorMes.set(chaveC, (concluidosPorMes.get(chaveC) ?? 0) + 1);
-    }
-  }
-
-  const kpis = [
-    {
-      rotulo: "Chamados no período",
-      valor: String(chamados.length),
-      detalhe: `${concluidos.length} concluídos`,
-      Icone: Ticket,
-      classes: "bg-amber-100 text-amber-700",
-    },
-    {
-      rotulo: "Tempo médio de conclusão",
-      valor: formatarDuracaoMedia(tempoMedioMs),
-      detalhe: `base: ${tempos.length} chamados`,
-      Icone: Clock,
-      classes: "bg-sky-100 text-sky-700",
-    },
-    {
-      rotulo: "Gastos no período",
-      valor: formatarMoeda(gastosTotais),
-      detalhe: `${compras.length} compras`,
-      Icone: Wallet,
-      classes: "bg-emerald-100 text-emerald-700",
-    },
-    {
-      rotulo: "SLA (no prazo)",
-      valor: Number.isFinite(sla) ? `${sla}%` : "—",
-      detalhe: `base: ${comPrazo.length} com prazo`,
-      Icone: Clock,
-      classes: "bg-violet-100 text-violet-700",
-    },
-  ];
-
-  const totalStatus = porStatus.aberto + porStatus.em_andamento + porStatus.concluido;
-  const barraStatus = [
-    { rotulo: "Abertos", valor: porStatus.aberto, classes: "bg-amber-400" },
-    { rotulo: "Em andamento", valor: porStatus.em_andamento, classes: "bg-sky-500" },
-    { rotulo: "Concluídos", valor: porStatus.concluido, classes: "bg-emerald-500" },
-  ];
+  // Dados para exportação (mesma query, mesmo filtro)
+  const exportData = {
+    periodo,
+    org: ctx.orgNome,
+    totalAtivos,
+    criticos,
+    osAbertas,
+    backlog,
+    sla,
+    mttr: mttr.value !== null ? formatarDuracaoMedia(mttr.value) : null,
+    mttrState: mttr.state,
+    texec: texec.value !== null ? formatarDuracaoMedia(texec.value) : null,
+    mtbf: mtbf.value !== null ? formatarDuracaoMedia(mtbf.value) : null,
+    estoque,
+    solicitacoes,
+    custoTotal: formatarMoeda(custoTotal),
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between print:block">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold text-zinc-900 print:text-2xl">
-            Relatórios Gerenciais
-          </h1>
+          <h1 className="text-xl font-bold text-zinc-900">Relatórios</h1>
           <p className="mt-0.5 text-sm text-zinc-500">
-            Período: {formatarData(inicio)} a {formatarData(fim)}
+            {ctx.orgNome} · Período: {periodo} · America/Sao_Paulo · {new Date().toLocaleDateString("pt-BR")}
           </p>
         </div>
-        <BotaoImprimirRelatorio />
-      </div>
-
-      <FiltrosPeriodo inicio={inicio} fim={fim} />
-
-      {/* KPIs */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {kpis.map(({ rotulo, valor, detalhe, Icone, classes }) => (
-          <div
-            key={rotulo}
-            className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm print:shadow-none"
-          >
-            <span
-              className={cn(
-                "flex size-11 shrink-0 items-center justify-center rounded-xl",
-                classes,
-              )}
-            >
-              <Icone className="size-5" />
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-xl leading-none font-bold text-zinc-900">
-                {valor}
-              </p>
-              <p className="mt-1 text-xs font-medium text-zinc-500">
-                {rotulo} · {detalhe}
-              </p>
-            </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1 rounded-xl border border-zinc-200 bg-zinc-100 p-1">
+            {PERIODOS.map((p) => (
+              <Link
+                key={p.id}
+                href={`/admin/relatorios?periodo=${p.id}&aba=${aba}`}
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold ${periodo === p.id ? "bg-white shadow ring-1 ring-zinc-200" : "text-zinc-500 hover:text-zinc-800"}`}
+              >
+                {p.rotulo}
+              </Link>
+            ))}
           </div>
-        ))}
-      </div>
-
-      {/* Gráficos */}
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm break-inside-avoid print:shadow-none">
-        <h2 className="text-base font-bold text-zinc-900">O.S. por status</h2>
-        <p className="mt-0.5 text-sm text-zinc-500">Distribuição no período selecionado</p>
-        {totalStatus === 0 ? (
-          <p className="mt-3 text-sm text-zinc-500">Sem chamados no período.</p>
-        ) : (
-          <div className="mt-4 space-y-2">
-            <div className="flex h-4 w-full overflow-hidden rounded-full bg-zinc-100">
-              {barraStatus.map((b) =>
-                b.valor > 0 ? (
-                  <span key={b.rotulo} style={{ width: `${(b.valor / totalStatus) * 100}%` }} className={b.classes} title={`${b.rotulo}: ${b.valor}`} />
-                ) : null,
-              )}
-            </div>
-            <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-600">
-              {barraStatus.map((b) => (
-                <li key={b.rotulo} className="flex items-center gap-1.5">
-                  <span className={`size-2.5 rounded-full ${b.classes}`} />
-                  {b.rotulo}: <strong className="tabular-nums">{b.valor}</strong>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </section>
-      <GraficosRelatorio
-        gastosMes={gastosMes}
-        gastosSetor={gastosSetor}
-        ranking={ranking}
-      />
-
-      {/* Resumo consolidado */}
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm break-inside-avoid print:shadow-none">
-        <h2 className="text-base font-bold text-zinc-900">
-          Resumo consolidado mensal
-        </h2>
-        <p className="mt-0.5 text-sm text-zinc-500">
-          Visão de supervisão · {formatarData(inicio)} a {formatarData(fim)}
-        </p>
-        <div className="mt-4 overflow-x-auto rounded-xl ring-1 ring-zinc-200">
-          <table className="w-full min-w-[520px] text-left text-sm">
-            <thead>
-              <tr className="bg-zinc-50 text-xs tracking-wide text-zinc-500 uppercase">
-                <th className="px-4 py-2.5 font-semibold">Mês</th>
-                <th className="px-4 py-2.5 font-semibold">Chamados abertos</th>
-                <th className="px-4 py-2.5 font-semibold">Chamados concluídos</th>
-                <th className="px-4 py-2.5 font-semibold">Gastos</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {meses.map((m) => (
-                <tr key={m} className="text-zinc-800">
-                  <td className="px-4 py-2.5 font-medium">{rotuloMes(m)}</td>
-                  <td className="px-4 py-2.5">{abertosPorMes.get(m) ?? 0}</td>
-                  <td className="px-4 py-2.5">{concluidosPorMes.get(m) ?? 0}</td>
-                  <td className="px-4 py-2.5 font-semibold">
-                    {formatarMoeda(gastosPorMes.get(m) ?? 0)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="bg-zinc-900 font-bold text-white">
-                <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5">{chamados.length}</td>
-                <td className="px-4 py-2.5">{concluidos.length}</td>
-                <td className="px-4 py-2.5">{formatarMoeda(gastosTotais)}</td>
-              </tr>
-            </tfoot>
-          </table>
+          <ExportButtons data={exportData} periodo={periodo} aba={aba} />
         </div>
-      </section>
+      </div>
+
+      <nav className="no-scrollbar flex gap-1 overflow-x-auto rounded-2xl border border-zinc-200/70 bg-zinc-200/60 p-1.5">
+        {ABAS.map((a) => (
+          <Link
+            key={a.id}
+            href={`/admin/relatorios?periodo=${periodo}&aba=${a.id}`}
+            className={`flex-1 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-bold ${aba === a.id ? "bg-white shadow ring-1 ring-zinc-200" : "text-zinc-500 hover:text-zinc-800"}`}
+          >
+            {a.rotulo}
+          </Link>
+        ))}
+      </nav>
+
+      {aba === "executivo" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard titulo="Total Ativos" valor={totalAtivos} href="/admin/ativos" sub="Cadastrados" />
+            <KpiCard titulo="Ativos Críticos" valor={criticos} href="/admin/ativos?critico=1" sub={`${totalAtivos ? ((criticos / totalAtivos) * 100).toFixed(1) : 0}% do total`} />
+            <KpiCard titulo="O.S. Abertas" valor={osAbertas} href="/admin/chamados?os_status=aberta" sub={`Backlog: ${backlog}`} />
+            <KpiCard titulo="Solicitações Pendentes" valor={solicitacoes} href="/admin/compras/solicitacoes" />
+          </div>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <KpiCard titulo="SLA Dentro do Prazo" valor={sla.taxaDentro !== null ? `${sla.taxaDentro.toFixed(1)}%` : "—"} sub={`Dentro ${sla.dentro} · Próximo ${sla.proximo} · Atrasado ${sla.atrasado} · Sem prazo ${sla.semPrazo}`} />
+            <KpiCard titulo="MTTR" valor={mttr.value !== null ? formatarDuracaoMedia(mttr.value) : "—"} estado={mttr.state} sub="Tempo médio de resolução" />
+            <KpiCard titulo="Tempo Execução" valor={texec.value !== null ? formatarDuracaoMedia(texec.value) : "—"} estado={texec.state} sub="Média data_fim - data_inicio" />
+          </div>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <KpiCard titulo="MTBF" valor={mtbf.value !== null ? formatarDuracaoMedia(mtbf.value) : "—"} estado={mtbf.state} sub="≥3 corretiva, média intervalos" />
+            <KpiCard titulo="Disponibilidade" valor={disponibilidade.value !== null ? `${(disponibilidade.value * 100).toFixed(1)}%` : "—"} estado={disponibilidade.state} sub="Histórico contínuo" />
+            <KpiCard titulo="Custo Total (período)" valor={formatarMoeda(custoTotal)} sub="Mão obra + outros + serviços + consumo" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <KpiCard titulo="Estoque Disponível" valor={estoque.disponivel} sub={`Críticos ${estoque.criticos} · Abaixo reposição ${estoque.abaixoReposicao} · Valor ${formatarMoeda(estoque.valorFisico)}`} href="/admin/estoque" />
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Ativos por Status</p>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                {Object.entries(porStatus).map(([k, v]) => (
+                  <span key={k} className="rounded-full bg-zinc-100 px-2 py-1 font-medium">
+                    {k}: {v}
+                  </span>
+                ))}
+                {Object.keys(porStatus).length === 0 && <span className="text-zinc-500">Sem dados</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {aba === "ativos" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <KpiCard titulo="Total" valor={totalAtivos} />
+            <KpiCard titulo="Críticos" valor={criticos} href="/admin/ativos?critico=1" />
+            <KpiCard titulo="Disponibilidade" valor={disponibilidade.value !== null ? `${(disponibilidade.value * 100).toFixed(1)}%` : "—"} estado={disponibilidade.state} />
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-black">Ativos por Status</h3>
+            <div className="mt-3 space-y-2">
+              {Object.entries(porStatus).map(([status, qtd]) => (
+                <div key={status} className="flex items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2">
+                  <span className="text-sm font-bold">{status}</span>
+                  <Link href={`/admin/ativos?status=${status}`} className="text-sm font-black tabular-nums underline-offset-2 hover:underline">
+                    {qtd}
+                  </Link>
+                </div>
+              ))}
+              {Object.keys(porStatus).length === 0 && <p className="text-sm text-zinc-500">Sem dados</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {aba === "manutencao" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <KpiCard titulo="O.S. Abertas" valor={osAbertas} href="/admin/chamados?os_status=aberta" />
+            <KpiCard titulo="Backlog O.S." valor={backlog} sub="os_status ativos" />
+            <KpiCard titulo="MTTR" valor={mttr.value !== null ? formatarDuracaoMedia(mttr.value) : "—"} estado={mttr.state} />
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-black">O.S. por Ativo (Top 10)</h3>
+            <div className="mt-3 space-y-1">
+              {topOS.length === 0 ? (
+                <p className="text-sm text-zinc-500">Sem dados</p>
+              ) : (
+                topOS.map(([id, qtd]) => (
+                  <div key={id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-mono text-xs">{id.slice(0, 8)}</span>
+                    <Link href={`/admin/chamados?ativo=${id}`} className="text-sm font-bold hover:underline">
+                      {qtd} O.S.
+                    </Link>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {aba === "sla" && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-black">SLA — Dentro / Próximo (2d) / Atrasado / Sem prazo</h3>
+            <div className="mt-3 flex h-4 overflow-hidden rounded-full bg-zinc-100">
+              <div className="bg-emerald-500" style={{ width: `${sla.totalComPrazo ? (sla.dentro / sla.totalComPrazo) * 100 : 0}%` }} />
+              <div className="bg-amber-400" style={{ width: `${sla.totalComPrazo ? (sla.proximo / sla.totalComPrazo) * 100 : 0}%` }} />
+              <div className="bg-red-500" style={{ width: `${sla.totalComPrazo ? (sla.atrasado / sla.totalComPrazo) * 100 : 0}%` }} />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full bg-emerald-100 px-2 py-1 font-bold text-emerald-800">Dentro: {sla.dentro}</span>
+              <span className="rounded-full bg-amber-100 px-2 py-1 font-bold text-amber-800">Próximo: {sla.proximo}</span>
+              <span className="rounded-full bg-red-100 px-2 py-1 font-bold text-red-800">Atrasado: {sla.atrasado}</span>
+              <span className="rounded-full bg-zinc-100 px-2 py-1">Sem prazo: {sla.semPrazo}</span>
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">Taxa dentro do prazo: {sla.taxaDentro !== null ? `${sla.taxaDentro.toFixed(1)}%` : "Sem dados"}</p>
+          </div>
+        </div>
+      )}
+
+      {aba === "custos" && (
+        <div className="space-y-4">
+          <KpiCard titulo="Custo Total (período)" valor={formatarMoeda(custoTotal)} sub="Mão obra + outros + serviços + consumo (sem compra)" />
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-black">Custo por Ativo (Top 10)</h3>
+            <div className="mt-3 space-y-1">
+              {topCusto.length === 0 ? (
+                <p className="text-sm text-zinc-500">Sem dados</p>
+              ) : (
+                topCusto.map(([id, v]) => (
+                  <div key={id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-mono text-xs">{id.slice(0, 8)}</span>
+                    <span className="text-sm font-bold">{formatarMoeda(v)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-zinc-500">Compra ≠ consumo. Teste: Compra 1000 + Consumo 100 = Custo 100.</p>
+        </div>
+      )}
+
+      {aba === "estoque" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <KpiCard titulo="Disponível" valor={estoque.disponivel} sub={`Físico - reservado`} />
+            <KpiCard titulo="Críticos" valor={estoque.criticos} href="/admin/estoque?filtro=criticos" sub="disponível <= mínimo" />
+            <KpiCard titulo="Valor físico" valor={formatarMoeda(estoque.valorFisico)} sub={`${estoque.total} produtos`} />
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-black">Top Consumo — Quantidade</h3>
+            <div className="mt-2 space-y-1">
+              {consumo.porQuantidade.length === 0 ? (
+                <p className="text-sm text-zinc-500">Sem consumo no período</p>
+              ) : (
+                consumo.porQuantidade.map(([id, qtd]) => (
+                  <div key={id} className="flex justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+                    <span className="font-mono text-xs">{id.slice(0, 8)}</span>
+                    <span className="font-bold">{qtd}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-black">Top Consumo — Valor</h3>
+            <div className="mt-2 space-y-1">
+              {consumo.porValor.length === 0 ? (
+                <p className="text-sm text-zinc-500">Sem consumo</p>
+              ) : (
+                consumo.porValor.map(([id, v]) => (
+                  <div key={id} className="flex justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+                    <span className="font-mono text-xs">{id.slice(0, 8)}</span>
+                    <span className="font-bold">{formatarMoeda(v)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {aba === "solicitacoes" && (
+        <div className="space-y-4">
+          <KpiCard titulo="Solicitações Pendentes" valor={solicitacoes} href="/admin/compras/solicitacoes" sub="rascunho/enviada/em_analise/em_cotacao" />
+          <p className="text-xs text-zinc-500">Filtros futuros: unidade, localidade, categoria, técnico — quando schema suportar.</p>
+        </div>
+      )}
+
+      {aba === "top" && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-black">Top 10 por O.S.</h3>
+            <div className="mt-2 space-y-1">
+              {topOS.map(([id, qtd]) => (
+                <div key={id} className="flex justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+                  <Link href={`/admin/chamados?ativo=${id}`} className="font-mono text-xs hover:underline">
+                    {id.slice(0, 8)}
+                  </Link>
+                  <span className="font-bold">{qtd}</span>
+                </div>
+              ))}
+              {topOS.length === 0 && <p className="text-sm text-zinc-500">Sem dados</p>}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-black">Top 10 por Custo</h3>
+            <div className="mt-2 space-y-1">
+              {topCusto.map(([id, v]) => (
+                <div key={id} className="flex justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+                  <span className="font-mono text-xs">{id.slice(0, 8)}</span>
+                  <span className="font-bold">{formatarMoeda(v)}</span>
+                </div>
+              ))}
+              {topCusto.length === 0 && <p className="text-sm text-zinc-500">Sem dados</p>}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-black">Top 10 por Reincidência</h3>
+            <div className="mt-2 space-y-1">
+              {topReinc.map(([id, qtd]) => (
+                <div key={id} className="flex justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+                  <span className="font-mono text-xs">{id.slice(0, 8)}</span>
+                  <span className="font-bold">{qtd} reinc.</span>
+                </div>
+              ))}
+              {topReinc.length === 0 && <p className="text-sm text-zinc-500">Sem reincidências (mesmo ativo + mesma categoria &lt;90d)</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-zinc-400">Tenant: {ctx.orgId.slice(0, 8)} · Período: {periodo} · America/Sao_Paulo · Dashboard e Relatórios consomem src/lib/analytics (mesma query)</p>
     </div>
   );
 }
