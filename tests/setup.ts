@@ -1,13 +1,16 @@
 import { config } from "dotenv";
 config({ path: ".env.test" });
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { SignJWT } from "jose";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY!;
+const JWT_SECRET = process.env.SUPABASE_JWT_SECRET!;
 
 export interface TestOrg {
   admin: SupabaseClient;
+  client: SupabaseClient;
   orgId: string;
   userId: string;
   email: string;
@@ -17,6 +20,24 @@ export interface TestOrg {
 const usedEmails = new Set<string>();
 const usedOrgs = new Set<string>();
 let orgCounter = 0;
+const userClients = new Map<string, SupabaseClient>();
+
+async function createJwtClient(userId: string): Promise<SupabaseClient> {
+  if (userClients.has(userId)) return userClients.get(userId)!;
+  const secret = new TextEncoder().encode(JWT_SECRET);
+  const jwt = await new SignJWT({ role: "authenticated", aud: "authenticated" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setExpirationTime("2h")
+    .setIssuedAt()
+    .sign(secret);
+  const client = createClient(SUPABASE_URL, ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${jwt}` } },
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  userClients.set(userId, client);
+  return client;
+}
 
 function uniqueEmail(prefix: string): string {
   let attempt = 0;
@@ -57,12 +78,21 @@ async function criarUsuario(email: string): Promise<string> {
 }
 
 async function criarPerfil(userId: string, email: string): Promise<void> {
-  const { error } = await ADMIN_CLIENT.from("profiles").upsert({
+  const r1 = await ADMIN_CLIENT.from("profiles").upsert({
     id: userId,
     email,
     nome: `Teste ${email}`,
   });
-  if (error) throw new Error(`criarPerfil: ${error.message}`);
+  if (!r1.error) return;
+  if (r1.error.message.includes("email")) {
+    const r2 = await ADMIN_CLIENT.from("profiles").upsert({
+      id: userId,
+      nome: `Teste ${email}`,
+    });
+    if (!r2.error) return;
+    throw new Error(`criarPerfil fallback: ${r2.error.message}`);
+  }
+  throw new Error(`criarPerfil: ${r1.error.message}`);
 }
 
 async function criarMembership(userId: string, orgId: string) {
@@ -81,7 +111,8 @@ export async function setupOrg(slug: string): Promise<TestOrg> {
   const userId = await criarUsuario(email);
   await criarPerfil(userId, email);
   await criarMembership(userId, orgId);
-  return { admin: ADMIN_CLIENT, orgId, userId, email, slug };
+  const client = await createJwtClient(userId);
+  return { admin: ADMIN_CLIENT, client, orgId, userId, email, slug };
 }
 
 export async function cleanup(): Promise<void> {
@@ -112,12 +143,11 @@ export async function cleanup(): Promise<void> {
   }
   usedEmails.clear();
   usedOrgs.clear();
+  userClients.clear();
 }
 
 /**
- * SELECT via RPC exec_as_user. Erros são propagados.
- * Se RLS bloqueou → 0 linhas (sucesso do teste).
- * Se RPC falhou → exceção (infraestrutura).
+ * SELECT via JWT client (RLS enforced as that user).
  */
 export async function selectComo<T = Record<string, unknown>>(
   userId: string,
@@ -125,38 +155,57 @@ export async function selectComo<T = Record<string, unknown>>(
   filters: Record<string, string> = {},
   selects = "*",
 ): Promise<{ data: T[]; rowsAffected: number }> {
-  const conditions = Object.entries(filters)
-    .map(([k, v]) => ` AND ${k} = '${v.replace(/'/g, "''")}'`)
-    .join("");
-  const query = `SELECT ${selects} FROM public.${table} WHERE 1=1${conditions}`;
-  const { data, error } = await ADMIN_CLIENT.rpc("exec_as_user", {
-    p_user_id: userId,
-    p_sql: query,
-  });
-  if (error) {
-    throw new Error(`selectComo(${table}) falhou: ${error.message}`);
-  }
+  const client = await createJwtClient(userId);
+  let q = client.from(table).select(selects);
+  for (const [k, v] of Object.entries(filters)) q = q.eq(k, v);
+  const { data, error } = await q;
+  if (error) throw new Error(`selectComo(${table}) falhou: ${error.message}`);
   return { data: (data ?? []) as T[], rowsAffected: (data ?? []).length };
 }
 
 /**
- * INSERT/UPDATE/DELETE/EXISTS via RPC exec_as_user. Erros são propagados.
- * Se RLS/trigger bloqueou → exceção (sinal de SUCESSO do teste cross-tenant).
- * Se RPC falhou → exceção (infraestrutura).
+ * UPDATE via JWT client. Retorna quantidade de linhas afetadas (RLS filtra).
+ */
+export async function updateComo(
+  userId: string,
+  table: string,
+  id: string,
+  updates: Record<string, unknown>,
+): Promise<{ rowsAffected: number }> {
+  const client = await createJwtClient(userId);
+  const { data, error } = await client.from(table).update(updates).eq("id", id).select("id");
+  if (error) throw new Error(`updateComo(${table}) falhou: ${error.message}`);
+  return { rowsAffected: (data ?? []).length };
+}
+
+/**
+ * DELETE via JWT client.
+ */
+export async function deleteComo(
+  userId: string,
+  table: string,
+  id: string,
+): Promise<{ rowsAffected: number }> {
+  const client = await createJwtClient(userId);
+  const { data, error } = await client.from(table).delete().eq("id", id).select("id");
+  if (error) throw new Error(`deleteComo(${table}) falhou: ${error.message}`);
+  return { rowsAffected: (data ?? []).length };
+}
+
+/**
+ * Legacy: executeComo via RPC (para testes de privilégio, não RLS).
  */
 export async function executeComo(
   _userId: string,
   sql: string,
 ): Promise<{ ok: true; rowsAffected: number }> {
-  // Para INSERT/UPDATE/DELETE, é mais seguro chamar com EXECUTE e checar via SELECT depois.
   const { data, error } = await ADMIN_CLIENT.rpc("exec_as_user", {
     p_user_id: _userId,
     p_sql: sql,
   });
-  if (error) {
-    throw new Error(`executeComo falhou: ${error.message}`);
-  }
-  return { ok: true, rowsAffected: (data ?? []).length };
+  if (error) throw new Error(`executeComo falhou: ${error.message}`);
+  const arr = Array.isArray(data) ? (data as unknown[]) : [];
+  return { ok: true, rowsAffected: arr.length };
 }
 
 /** Cliente anon (não autenticado). */

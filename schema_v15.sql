@@ -1,3 +1,6 @@
+-- DROP antes de recriar (retorno mudou: setof jsonb -> jsonb)
+drop function if exists public.exec_as_user(uuid, text);
+
 -- ============================================================
 -- SGA-M · schema_v15.sql — RPC: exec_as_user (testes de RLS)
 -- ------------------------------------------------------------
@@ -28,14 +31,18 @@
 create or replace function public.exec_as_user(
   p_user_id uuid,
   p_sql text
-) returns setof jsonb
+) returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_result jsonb;
 begin
   perform set_config('request.jwt.claim.sub', p_user_id::text, true);
-  return query execute p_sql;
+  perform set_config('request.jwt.claim.role', 'authenticated', true);
+  execute 'WITH _q AS (' || p_sql || ') SELECT COALESCE(jsonb_agg(_q), ''[]''::jsonb) FROM _q' into v_result;
+  return v_result;
 exception
   when insufficient_privilege then
     raise;
