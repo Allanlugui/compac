@@ -97,31 +97,46 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
   const podeEncerrar = pode(ctx, "os.encerrar");
   const podeAprovar = pode(ctx, "os.aprovar");
 
-  const [
-    { data: chamadoData },
-    { data: comprasData },
-    { data: produtosData },
-    { data: modelosData },
-    { data: logsData },
-    { data: osHistData },
-    { data: ativData },
-    { data: servData },
-    { data: fotosData },
-    { data: execsData },
-    { data: fornsData },
-  ] = await Promise.all([
+const [
+  { data: chamadoData },
+  { data: comprasData },
+  { data: consumoData },
+  { data: produtosData },
+  { data: modelosData },
+  { data: logsData },
+  { data: osHistData },
+  { data: ativData },
+  { data: servData },
+  { data: fotosData },
+  { data: execsData },
+  { data: fornsData },
+] = await Promise.all([
+  supabase
+    .from("chamados")
+    .select("*, ativos(id, nome, localizacao)")
+    .eq("id", id)
+    .eq("organization_id", ctx.orgId)
+    .maybeSingle(),
+  supabase
+    .from("compras")
+    .select("*")
+    .eq("chamado_id", id)
+    .eq("organization_id", ctx.orgId)
+    .order("data_compra", { ascending: true }),
+  supabase
+    .from("movimentacoes_estoque")
+    .select("*, produtos(id, codigo, descricao, unidade, custo_medio)")
+    .eq("chamado_id", id)
+    .eq("organization_id", ctx.orgId)
+    .eq("tipo", "consumo")
+    .order("created_at", { ascending: true }),
     supabase
-      .from("chamados")
-      .select("*, ativos(id, nome, localizacao)")
-      .eq("id", id)
+      .from("movimentacoes_estoque")
+      .select("*, produtos(id, codigo, descricao, unidade, custo_medio)")
+      .eq("chamado_id", id)
       .eq("organization_id", ctx.orgId)
-      .maybeSingle(),
-    supabase
-      .from("compras")
-      .select("*")
-      .eq("id", id)
-      .eq("organization_id", ctx.orgId)
-      .order("data_compra", { ascending: true }),
+      .eq("tipo", "consumo")
+      .order("created_at", { ascending: true }),
     supabase
       .from("produtos")
       .select("id, codigo, descricao, estoque_atual, estoque_reservado")
@@ -262,11 +277,24 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
 
   const osHist = (osHistData ?? []) as OsStatusHistorico[];
   const atividades = (ativData ?? []) as OsAtividade[];
-  const servicos = ((servData ?? []) as (OsServicoExterno & { fornecedores: { nome: string } | null })[]).map(
-    (s) => ({ ...s, fornecedor_nome: s.fornecedores?.nome ?? null }),
-  );
-  const totalServicos = servicos.reduce((s, x) => s + Number(x.valor ?? 0), 0);
-  const totalMateriais = compras.reduce((s, c) => s + Number(c.valor_total ?? 0), 0);
+const servicos = ((servData ?? []) as (OsServicoExterno & { fornecedores: { nome: string } | null })[]).map(
+  (s) => ({ ...s, fornecedor_nome: s.fornecedores?.nome ?? null }),
+);
+const totalServicos = servicos.reduce((s, x) => s + Number(x.valor ?? 0), 0);
+
+// Materiais consumidos = Σ(consumo.quantidade × custo_unitário)
+const consumos = ((consumoData ?? []) as {
+  id: string;
+  quantidade: number;
+  custo_unitario: number;
+  created_at: string;
+  executado_por: string | null;
+  produtos: { id: string; codigo: string; descricao: string; unidade: string | null; custo_medio: number | null } | null;
+}[]);
+const totalMateriais = consumos.reduce(
+  (s, c) => s + Number(c.quantidade) * Number(c.custo_unitario ?? 0),
+  0,
+);
 
   const hojeISO = new Date().toISOString().slice(0, 10);
   const slaRotulo = sla(hojeISO, chamado.prazo, chamado.concluido_em);
@@ -319,10 +347,10 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
       titulo: a.descricao,
       detalhe: a.executado_por ?? undefined,
     })),
-    ...compras.map((c): EventoOS => ({
-      quando: c.data_compra.length === 10 ? `${c.data_compra}T12:00:00` : c.created_at,
-      titulo: `Insumo: ${c.item}`,
-      detalhe: `${String(c.quantidade)} un · ${formatarMoeda(Number(c.valor_total ?? 0))}`,
+    ...consumos.map((c): EventoOS => ({
+      quando: c.created_at,
+      titulo: `Material: ${c.produtos?.descricao ?? "item"}`,
+      detalhe: `${String(c.quantidade)} ${c.produtos?.unidade ?? "un"} · ${formatarMoeda(Number(c.custo_unitario ?? 0) * c.quantidade)}`,
     })),
     ...servicos.map((s): EventoOS => ({
       quando: s.created_at,
@@ -682,6 +710,52 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
               Baixa do estoque
             </p>
             <ConsumoEstoque chamadoId={chamado.id} produtos={produtos} />
+          </div>
+          {/* Materiais consumidos */}
+          <div>
+            <p className="mb-2 text-xs font-bold tracking-wide text-zinc-500 uppercase">
+              Materiais consumidos
+            </p>
+            {consumos.length === 0 ? (
+              <p className="text-sm text-zinc-500">Nenhum consumo registrado.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-xl ring-1 ring-zinc-200">
+                <table className="w-full min-w-[560px] text-left text-sm">
+                  <thead>
+                    <tr className="bg-zinc-50 text-xs tracking-wide text-zinc-500 uppercase">
+                      <th className="px-4 py-2.5 font-semibold">Produto</th>
+                      <th className="px-4 py-2.5 font-semibold">Código</th>
+                      <th className="px-4 py-2.5 font-semibold">Qtd</th>
+                      <th className="px-4 py-2.5 font-semibold">Unid.</th>
+                      <th className="px-4 py-2.5 font-semibold">Custo un.</th>
+                      <th className="px-4 py-2.5 font-semibold">Total</th>
+                      <th className="px-4 py-2.5 font-semibold">Responsável</th>
+                      <th className="px-4 py-2.5 font-semibold">Data</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {consumos.map((c) => (
+                      <tr key={c.id} className="text-zinc-800">
+                        <td className="px-4 py-2.5 font-medium">{c.produtos?.descricao ?? "—"}</td>
+                        <td className="px-4 py-2.5 text-zinc-500">{c.produtos?.codigo ?? "—"}</td>
+                        <td className="px-4 py-2.5">{String(c.quantidade)}</td>
+                        <td className="px-4 py-2.5 text-zinc-500">{c.produtos?.unidade ?? "un"}</td>
+                        <td className="px-4 py-2.5">{formatarMoeda(Number(c.custo_unitario ?? 0))}</td>
+                        <td className="px-4 py-2.5 font-semibold">{formatarMoeda(Number(c.custo_unitario ?? 0) * c.quantidade)}</td>
+                        <td className="px-4 py-2.5 text-zinc-500">{c.executado_por ?? "—"}</td>
+                        <td className="px-4 py-2.5 text-zinc-500">{formatarDataHora(c.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-zinc-50 font-bold text-zinc-900">
+                      <td colSpan={5} className="px-4 py-2.5">Total consumido</td>
+                      <td colSpan={3} className="px-4 py-2.5">{formatarMoeda(totalMateriais)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
           </div>
           <ComprasDoChamado chamadoId={chamado.id} iniciais={compras} />
           <div>
