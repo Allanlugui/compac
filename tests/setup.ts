@@ -1,9 +1,9 @@
 import { config } from "dotenv";
 config({ path: ".env.test" });
-import { afterAll, afterEach, beforeAll } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY!;
 
 export interface TestOrg {
@@ -34,8 +34,13 @@ async function criarOrganizacao(slug: string): Promise<string> {
   orgCounter++;
   const id = crypto.randomUUID();
   const { error } = await ADMIN_CLIENT.from("organizations")
-    .insert({ id, nome: `Teste ${slug} ${orgCounter}`, slug: `${slug}-${orgCounter}-${Date.now().toString(36)}` })
-    .select("id").single();
+    .insert({
+      id,
+      nome: `Teste ${slug} ${orgCounter}`,
+      slug: `${slug}-${orgCounter}-${Date.now().toString(36)}`,
+    })
+    .select("id")
+    .single();
   if (error) throw new Error(`criarOrganizacao: ${error.message}`);
   usedOrgs.add(id);
   return id;
@@ -62,7 +67,10 @@ async function criarPerfil(userId: string, email: string): Promise<void> {
 
 async function criarMembership(userId: string, orgId: string) {
   const { error } = await ADMIN_CLIENT.from("memberships").insert({
-    user_id: userId, organization_id: orgId, role: "ADMIN", status: "ativo",
+    user_id: userId,
+    organization_id: orgId,
+    role: "ADMIN",
+    status: "ativo",
   });
   if (error) throw new Error(`criarMembership: ${error.message}`);
 }
@@ -96,7 +104,9 @@ export async function cleanup(): Promise<void> {
     await ADMIN_CLIENT.from("organizations").delete().eq("id", orgId);
   }
   const { data: users } = await ADMIN_CLIENT.auth.admin.listUsers({ perPage: 1000 });
-  const testUsers = (users?.users ?? []).filter((u) => u.email?.endsWith("@sga-test.local"));
+  const testUsers = (users?.users ?? []).filter((u) =>
+    u.email?.endsWith("@sga-test.local"),
+  );
   for (const u of testUsers) {
     await ADMIN_CLIENT.auth.admin.deleteUser(u.id);
   }
@@ -105,46 +115,57 @@ export async function cleanup(): Promise<void> {
 }
 
 /**
- * Executa query SQL no contexto do usuário `userId` usando a RPC
- * exec_as_user (security definer, injeta JWT via set_config).
- * Se a RPC não existir, cai para query direta via admin (sem RLS).
- *
- * Para testes de isolamento, usamos a RPC com SET LOCAL para que
- * auth.uid() retorne o userId correto e o RLS filtre os dados.
+ * SELECT via RPC exec_as_user. Erros são propagados.
+ * Se RLS bloqueou → 0 linhas (sucesso do teste).
+ * Se RPC falhou → exceção (infraestrutura).
  */
 export async function selectComo<T = Record<string, unknown>>(
   userId: string,
   table: string,
   filters: Record<string, string> = {},
-  selects = "*"
-): Promise<{ data: T[]; error: string | null }> {
-  try {
-    let query = `SELECT ${selects} FROM public.${table} WHERE 1=1`;
-    for (const [k, v] of Object.entries(filters)) {
-      query += ` AND ${k} = '${v.replace(/'/g, "''")}'`;
-    }
-    const { data, error } = await ADMIN_CLIENT.rpc("exec_as_user", {
-      p_user_id: userId,
-      p_sql: query,
-    });
-    if (error) throw new Error(error.message);
-    return { data: (data ?? []) as T[], error: null };
-  } catch (e) {
-    return { data: [], error: e instanceof Error ? e.message : "Erro desconhecido" };
+  selects = "*",
+): Promise<{ data: T[]; rowsAffected: number }> {
+  const conditions = Object.entries(filters)
+    .map(([k, v]) => ` AND ${k} = '${v.replace(/'/g, "''")}'`)
+    .join("");
+  const query = `SELECT ${selects} FROM public.${table} WHERE 1=1${conditions}`;
+  const { data, error } = await ADMIN_CLIENT.rpc("exec_as_user", {
+    p_user_id: userId,
+    p_sql: query,
+  });
+  if (error) {
+    throw new Error(`selectComo(${table}) falhou: ${error.message}`);
   }
+  return { data: (data ?? []) as T[], rowsAffected: (data ?? []).length };
 }
+
+/**
+ * INSERT/UPDATE/DELETE/EXISTS via RPC exec_as_user. Erros são propagados.
+ * Se RLS/trigger bloqueou → exceção (sinal de SUCESSO do teste cross-tenant).
+ * Se RPC falhou → exceção (infraestrutura).
+ */
+export async function executeComo(
+  _userId: string,
+  sql: string,
+): Promise<{ ok: true; rowsAffected: number }> {
+  // Para INSERT/UPDATE/DELETE, é mais seguro chamar com EXECUTE e checar via SELECT depois.
+  const { data, error } = await ADMIN_CLIENT.rpc("exec_as_user", {
+    p_user_id: _userId,
+    p_sql: sql,
+  });
+  if (error) {
+    throw new Error(`executeComo falhou: ${error.message}`);
+  }
+  return { ok: true, rowsAffected: (data ?? []).length };
+}
+
+/** Cliente anon (não autenticado). */
+export const ANON_CLIENT = createClient(SUPABASE_URL, ANON_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
 
 const ADMIN_CLIENT = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
-
-beforeAll(() => {
-  if (!SUPABASE_URL || !SERVICE_KEY) {
-    throw new Error("Defina NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_KEY no .env.test");
-  }
-});
-
-afterEach(async () => { await cleanup(); });
-afterAll(async () => { await ADMIN_CLIENT.auth.signOut(); });
 
 export { ADMIN_CLIENT };
