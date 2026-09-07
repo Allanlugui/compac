@@ -35,7 +35,6 @@ set search_path = public
 as $$
 begin
   perform set_config('request.jwt.claim.sub', p_user_id::text, true);
-  perform set_config('role', 'authenticated', true);
   return query execute p_sql;
 exception
   when insufficient_privilege then
