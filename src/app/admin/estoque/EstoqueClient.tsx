@@ -523,43 +523,75 @@ export default function EstoqueClient({
                   </tbody>
                 </table>
               </div>
-              {/* Edição inline expandida abaixo da tabela */}
+              {/* Drawer de edição — substitui o inline expandido */}
               {editId && (() => {
                 const p = produtos.find((x) => x.id === editId);
                 if (!p) return null;
                 return (
-                  <div className="border-t border-zinc-200 bg-zinc-50 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-black">Editar — {p.codigo} · {p.descricao}</h4>
-                      <button type="button" onClick={() => setEditId(null)} className="rounded-lg p-1 text-zinc-500 hover:bg-white"><X className="size-4" /></button>
+                  <div className="fixed inset-0 z-50 flex">
+                    <button type="button" aria-label="Fechar edição" onClick={() => setEditId(null)} className="flex-1 bg-black/40 backdrop-blur-sm" />
+                    <div className="ml-auto flex h-full w-full max-w-[520px] flex-col overflow-hidden bg-white shadow-2xl">
+                      <div className="flex items-start justify-between border-b border-zinc-200 p-4">
+                        <div>
+                          <p className="font-mono text-xs font-black text-zinc-500">{p.codigo} {p.sku ? `· ${p.sku}` : ""}</p>
+                          <h3 className="text-lg font-black">Editar produto</h3>
+                          <p className="text-xs text-zinc-500">{p.descricao}</p>
+                        </div>
+                        <button type="button" onClick={() => setEditId(null)} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"><X className="size-5" /></button>
+                      </div>
+                      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+                        <label className="block">
+                          <span className="text-xs font-bold text-zinc-700">Descrição *</span>
+                          <input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} maxLength={160} placeholder="Descrição" className={`${campo} mt-1`} />
+                        </label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className="text-xs font-bold text-zinc-700">Estoque mínimo</span>
+                            <input type="number" min="0" step="0.01" value={editMin} onChange={(e) => setEditMin(e.target.value)} className={`${campo} mt-1`} />
+                          </label>
+                          <label className="block">
+                            <span className="text-xs font-bold text-zinc-700">Estoque máximo</span>
+                            <input type="number" min="0" step="0.01" placeholder="Sem limite" value={editMax} onChange={(e) => setEditMax(e.target.value)} className={`${campo} mt-1`} />
+                          </label>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className="text-xs font-bold text-zinc-700">Ponto de reposição</span>
+                            <input type="number" min="0" step="0.01" value={editRep} onChange={(e) => setEditRep(e.target.value)} className={`${campo} mt-1`} />
+                          </label>
+                          <label className="block">
+                            <span className="text-xs font-bold text-zinc-700">Localização</span>
+                            <input value={editLoc} onChange={(e) => setEditLoc(e.target.value)} maxLength={160} placeholder="Ex: Almox A — Prateleira 3" className={`${campo} mt-1`} />
+                          </label>
+                        </div>
+                        <label className="block">
+                          <span className="text-xs font-bold text-zinc-700">Fornecedor principal</span>
+                          <select value={vincForn} onChange={(e) => setVincForn(e.target.value)} className={`${campo} mt-1`}>
+                            <option value="">— Nenhum —</option>
+                            {fornecedores.map((f) => (
+                              <option key={f.id} value={f.id}>{f.nome}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="flex flex-wrap gap-4">
+                          <label className="flex items-center gap-2 text-sm font-bold text-zinc-700">
+                            <input type="checkbox" checked={vincPrincipal} onChange={(e) => setVincPrincipal(e.target.checked)} className="size-4 accent-zinc-900" />
+                            Fornecedor principal
+                          </label>
+                          <label className="flex items-center gap-2 text-sm font-bold text-zinc-700">
+                            <input type="checkbox" checked={editAtivo} onChange={(e) => setEditAtivo(e.target.checked)} className="size-4 accent-zinc-900" />
+                            Produto ativo
+                          </label>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 border-t border-zinc-200 p-4">
+                        <button type="button" onClick={() => setEditId(null)} className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-bold text-zinc-700 hover:bg-zinc-50">Cancelar</button>
+                        <button type="button" onClick={() => salvarEdicao(p.id)} disabled={salvandoEdit} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
+                          {salvandoEdit && <LoaderCircle className="size-4 animate-spin" />}
+                          Salvar
+                        </button>
+                      </div>
                     </div>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      <input aria-label="Descrição" value={editDesc} onChange={(e) => setEditDesc(e.target.value)} maxLength={160} placeholder="Descrição" className={campo} />
-                      <input aria-label="Mínimo" type="number" min="0" step="0.01" value={editMin} onChange={(e) => setEditMin(e.target.value)} className={campo} />
-                      <input aria-label="Máximo" type="number" min="0" step="0.01" placeholder="Máx" value={editMax} onChange={(e) => setEditMax(e.target.value)} className={campo} />
-                      <input aria-label="Reposição" type="number" min="0" step="0.01" placeholder="Repos." value={editRep} onChange={(e) => setEditRep(e.target.value)} className={campo} />
-                      <input aria-label="Localização" value={editLoc} onChange={(e) => setEditLoc(e.target.value)} maxLength={160} placeholder="Localização" className={campo} />
-                      <select aria-label="Fornecedor principal" value={vincForn} onChange={(e) => setVincForn(e.target.value)} className={campo}>
-                        <option value="">Fornecedor…</option>
-                        {fornecedores.map((f) => (
-                          <option key={f.id} value={f.id}>{f.nome}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-                        <input type="checkbox" checked={vincPrincipal} onChange={(e) => setVincPrincipal(e.target.checked)} className="size-4 accent-zinc-900" />
-                        Principal
-                      </label>
-                      <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-                        <input type="checkbox" checked={editAtivo} onChange={(e) => setEditAtivo(e.target.checked)} className="size-4 accent-zinc-900" />
-                        Ativo
-                      </label>
-                    </div>
-                    <button type="button" onClick={() => salvarEdicao(p.id)} disabled={salvandoEdit} className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-6 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
-                      {salvandoEdit && <LoaderCircle className="size-4 animate-spin" />}
-                      Salvar
-                    </button>
                   </div>
                 );
               })()}
