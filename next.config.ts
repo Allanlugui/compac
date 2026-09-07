@@ -18,8 +18,10 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
-  serverActions: {
-    bodySizeLimit: "25mb",
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "25mb",
+    },
   },
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
