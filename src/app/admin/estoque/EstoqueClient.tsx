@@ -2,7 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDownToLine, ArrowUpFromLine, LoaderCircle, PackagePlus, Pencil, TriangleAlert } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  ArrowUpDown,
+  Eye,
+  FileUp,
+  LoaderCircle,
+  PackagePlus,
+  Pencil,
+  Search,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import type { Movimentacao, Produto, TipoMovimentacao } from "@/lib/types";
 import { formatarDataHora, formatarMoeda } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -13,6 +25,8 @@ import {
   movimentarEstoque,
   transferirEstoque,
   vincularFornecedor,
+  processarNotaFiscal,
+  confirmarEntradaNotaFiscal,
 } from "./actions";
 
 const TIPOS: { id: TipoMovimentacao; rotulo: string }[] = [
@@ -34,6 +48,9 @@ export interface Opt {
   nome: string;
 }
 
+type Ordenacao = "codigo_asc" | "codigo_desc" | "descricao_asc" | "descricao_desc" | "estoque_desc" | "estoque_asc" | "atualizado_desc";
+type FiltroStatus = "todos" | "criticos" | "reposicao" | "inativos" | "ativos";
+
 export default function EstoqueClient({
   produtos,
   movimentacoes,
@@ -48,9 +65,16 @@ export default function EstoqueClient({
   fornecedores: Opt[];
 }) {
   const router = useRouter();
-  const [aba, setAba] = useState<"produtos" | "movs" | "inventario">("produtos");
+  const [aba, setAba] = useState<"produtos" | "movs" | "inventario" | "notas">("produtos");
   const [busca, setBusca] = useState("");
+  const [categoriaFiltro, setCategoriaFiltro] = useState("");
+  const [statusFiltro, setStatusFiltro] = useState<FiltroStatus>("todos");
+  const [ordenacao, setOrdenacao] = useState<Ordenacao>("codigo_asc");
   const [erro, setErro] = useState<string | null>(null);
+
+  // Ficha detalhada
+  const [fichaId, setFichaId] = useState<string | null>(null);
+  const fichaProduto = useMemo(() => produtos.find((p) => p.id === fichaId) ?? null, [produtos, fichaId]);
 
   // Novo produto
   const [codigo, setCodigo] = useState("");
@@ -71,6 +95,8 @@ export default function EstoqueClient({
   const [editLoc, setEditLoc] = useState("");
   const [editAtivo, setEditAtivo] = useState(true);
   const [salvandoEdit, setSalvandoEdit] = useState(false);
+  const [vincForn, setVincForn] = useState("");
+  const [vincPrincipal, setVincPrincipal] = useState(false);
 
   // Movimentar
   const [movProduto, setMovProduto] = useState("");
@@ -86,7 +112,7 @@ export default function EstoqueClient({
   const [trDestino, setTrDestino] = useState("");
   const [salvandoTr, setSalvandoTr] = useState(false);
 
-  // Inventário (contagem → diferença → ajuste)
+  // Inventário
   const [invProduto, setInvProduto] = useState("");
   const [invContagem, setInvContagem] = useState("");
   const [invMotivo, setInvMotivo] = useState("");
@@ -96,17 +122,51 @@ export default function EstoqueClient({
   const [uniSigla, setUniSigla] = useState("");
   const [uniNome, setUniNome] = useState("");
 
-  // Vínculo fornecedor
-  const [vincForn, setVincForn] = useState("");
-  const [vincPrincipal, setVincPrincipal] = useState(false);
+  // Nota Fiscal
+  const [nfFile, setNfFile] = useState<File | null>(null);
+  const [nfPreview, setNfPreview] = useState<null | {
+    numero: string;
+    serie: string;
+    chave: string;
+    emitente: string;
+    cnpj: string;
+    dataEmissao: string;
+    valorTotal: number;
+    itens: { codigo: string; descricao: string; qtd: number; valorUnit: number; valorTotal: number; ncm?: string }[];
+  }>(null);
+  const [nfProcessando, setNfProcessando] = useState(false);
+  const [nfConfirmando, setNfConfirmando] = useState(false);
+
+  const categoriaNome = useMemo(() => {
+    const m = new Map(categorias.map((c) => [c.id, c.nome]));
+    return (id: string | null) => (id ? m.get(id) ?? "—" : "—");
+  }, [categorias]);
 
   const filtrados = useMemo(() => {
+    let r = [...produtos];
     const t = busca.trim().toLowerCase();
-    if (!t) return produtos;
-    return produtos.filter((p) =>
-      `${p.codigo} ${p.descricao} ${p.categoria ?? ""} ${p.sku ?? ""}`.toLowerCase().includes(t),
-    );
-  }, [produtos, busca]);
+    if (t) {
+      r = r.filter((p) =>
+        `${p.codigo} ${p.descricao} ${p.sku ?? ""} ${p.codigo_fornecedor ?? ""} ${p.categoria ?? ""} ${categoriaNome(p.categoria_id)}`.toLowerCase().includes(t),
+      );
+    }
+    if (categoriaFiltro) r = r.filter((p) => p.categoria_id === categoriaFiltro);
+    if (statusFiltro === "criticos") r = r.filter((p) => Number(p.estoque_atual ?? 0) - Number(p.estoque_reservado ?? 0) <= Number(p.estoque_minimo ?? 0));
+    else if (statusFiltro === "reposicao") r = r.filter((p) => Number(p.estoque_atual ?? 0) - Number(p.estoque_reservado ?? 0) <= Number(p.ponto_reposicao ?? 0));
+    else if (statusFiltro === "inativos") r = r.filter((p) => !p.ativo);
+    else if (statusFiltro === "ativos") r = r.filter((p) => p.ativo);
+
+    r.sort((a, b) => {
+      if (ordenacao === "codigo_asc") return a.codigo.localeCompare(b.codigo);
+      if (ordenacao === "codigo_desc") return b.codigo.localeCompare(a.codigo);
+      if (ordenacao === "descricao_asc") return a.descricao.localeCompare(b.descricao);
+      if (ordenacao === "descricao_desc") return b.descricao.localeCompare(a.descricao);
+      if (ordenacao === "estoque_desc") return Number(b.estoque_atual ?? 0) - Number(a.estoque_atual ?? 0);
+      if (ordenacao === "estoque_asc") return Number(a.estoque_atual ?? 0) - Number(b.estoque_atual ?? 0);
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+    return r;
+  }, [produtos, busca, categoriaFiltro, statusFiltro, ordenacao, categoriaNome]);
 
   async function salvarProduto(e: React.FormEvent) {
     e.preventDefault();
@@ -210,24 +270,12 @@ export default function EstoqueClient({
     if (salvandoInv) return;
     setErro(null);
     const prod = produtos.find((p) => p.id === invProduto);
-    if (!prod) {
-      setErro("Selecione o produto.");
-      return;
-    }
+    if (!prod) { setErro("Selecione o produto."); return; }
     const contagem = Number(invContagem);
-    if (!Number.isFinite(contagem) || contagem < 0) {
-      setErro("Contagem inválida.");
-      return;
-    }
+    if (!Number.isFinite(contagem) || contagem < 0) { setErro("Contagem inválida."); return; }
     const fisico = Number(prod.estoque_atual ?? 0);
-    if (contagem === fisico) {
-      setErro("Sem diferença: contagem igual ao físico.");
-      return;
-    }
-    if (invMotivo.trim() === "") {
-      setErro("Inventário exige motivo do ajuste.");
-      return;
-    }
+    if (contagem === fisico) { setErro("Sem diferença: contagem igual ao físico."); return; }
+    if (invMotivo.trim() === "") { setErro("Inventário exige motivo do ajuste."); return; }
     if (!confirm(`Ajustar ${prod.codigo} de ${fisico} para ${contagem}?`)) return;
     setSalvandoInv(true);
     try {
@@ -259,24 +307,58 @@ export default function EstoqueClient({
     }
   }
 
+  async function handleNfProcessar() {
+    if (!nfFile) { setErro("Selecione um arquivo XML ou PDF da NF-e."); return; }
+    setErro(null);
+    setNfProcessando(true);
+    try {
+      const fd = new FormData();
+      fd.set("file", nfFile);
+      const r = await processarNotaFiscal(fd);
+      if (!r.ok) throw new Error(r.error);
+      setNfPreview(r.data as typeof nfPreview);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Falha ao processar NF.");
+    } finally {
+      setNfProcessando(false);
+    }
+  }
+
+  async function handleNfConfirmar() {
+    if (!nfPreview) return;
+    setNfConfirmando(true);
+    setErro(null);
+    try {
+      const r = await confirmarEntradaNotaFiscal({ itens: nfPreview.itens, chave: nfPreview.chave, numero: nfPreview.numero });
+      if (!r.ok) throw new Error(r.error);
+      setNfPreview(null);
+      setNfFile(null);
+      router.refresh();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Falha ao confirmar entrada.");
+    } finally {
+      setNfConfirmando(false);
+    }
+  }
+
   const campo =
     "min-h-[44px] w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 focus:outline-none disabled:opacity-60";
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 rounded-2xl border border-zinc-200/70 bg-zinc-200/60 p-1.5">
-        {(["produtos", "movs", "inventario"] as const).map((id) => (
+      <div className="flex gap-1 rounded-2xl border border-zinc-200/70 bg-zinc-200/60 p-1.5 overflow-x-auto">
+        {(["produtos", "movs", "inventario", "notas"] as const).map((id) => (
           <button
             key={id}
             type="button"
             onClick={() => setAba(id)}
             aria-pressed={aba === id}
             className={cn(
-              "flex-1 rounded-xl px-3 py-2 text-sm font-bold transition",
+              "flex-1 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-bold transition",
               aba === id ? "bg-white shadow-md ring-1 ring-zinc-200" : "text-zinc-500 hover:text-zinc-800",
             )}
           >
-            {id === "produtos" ? `Produtos (${produtos.length})` : id === "movs" ? `Movimentações (${movimentacoes.length})` : "Inventário"}
+            {id === "produtos" ? `Produtos (${produtos.length})` : id === "movs" ? `Movimentações (${movimentacoes.length})` : id === "inventario" ? "Inventário" : "Notas Fiscais"}
           </button>
         ))}
       </div>
@@ -322,90 +404,228 @@ export default function EstoqueClient({
             <p className="w-full text-xs font-bold tracking-wide text-zinc-500 uppercase">Unidades de medida da org</p>
             <input aria-label="Sigla" maxLength={10} placeholder="Sigla" value={uniSigla} onChange={(e) => setUniSigla(e.target.value.toUpperCase())} className={`${campo} max-w-28`} />
             <input aria-label="Nome da unidade" maxLength={40} placeholder="Nome" value={uniNome} onChange={(e) => setUniNome(e.target.value)} className={`${campo} max-w-56`} />
-            <button type="submit" className="inline-flex min-h-[44px] items-center rounded-lg bg-zinc-900 px-4 text-sm font-bold text-white hover:bg-zinc-700">
-              Adicionar
-            </button>
+            <button type="submit" className="inline-flex min-h-[44px] items-center rounded-lg bg-zinc-900 px-4 text-sm font-bold text-white hover:bg-zinc-700">Adicionar</button>
             <span className="text-xs text-zinc-400">{unidades.map((u) => u.sigla).join(" · ")}</span>
           </form>
 
-          <label className="block">
-            <span className="sr-only">Buscar produto</span>
-            <input type="search" placeholder="Buscar por código, descrição, categoria ou SKU…" value={busca} onChange={(e) => setBusca(e.target.value)} className="min-h-[44px] w-full rounded-xl border border-zinc-300 bg-white px-4 text-sm placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none" />
-          </label>
+          {/* Filtros e ordenação */}
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="grid gap-2 sm:grid-cols-12">
+              <div className="relative sm:col-span-5">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+                <input type="search" placeholder="Buscar por código, descrição, SKU, cód. fornecedor…" value={busca} onChange={(e) => setBusca(e.target.value)} className="min-h-[44px] w-full rounded-xl border border-zinc-300 bg-white pl-10 pr-4 text-sm placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none" />
+              </div>
+              <select aria-label="Filtrar categoria" value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)} className={`${campo} sm:col-span-3`}>
+                <option value="">Todas categorias</option>
+                {categorias.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nome}</option>
+                ))}
+              </select>
+              <select aria-label="Filtrar status" value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value as FiltroStatus)} className={`${campo} sm:col-span-2`}>
+                <option value="todos">Todos status</option>
+                <option value="ativos">Ativos</option>
+                <option value="criticos">Críticos</option>
+                <option value="reposicao">Abaixo reposição</option>
+                <option value="inativos">Inativos</option>
+              </select>
+              <div className="flex gap-1 sm:col-span-2">
+                <select aria-label="Ordenação" value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as Ordenacao)} className={`${campo} flex-1`}>
+                  <option value="codigo_asc">Código A→Z</option>
+                  <option value="codigo_desc">Código Z→A</option>
+                  <option value="descricao_asc">Descrição A→Z</option>
+                  <option value="descricao_desc">Descrição Z→A</option>
+                  <option value="estoque_desc">Maior estoque</option>
+                  <option value="estoque_asc">Menor estoque</option>
+                  <option value="atualizado_desc">Mais recentes</option>
+                </select>
+                <button type="button" onClick={() => { setBusca(""); setCategoriaFiltro(""); setStatusFiltro("todos"); setOrdenacao("codigo_asc"); }} className="rounded-lg border border-zinc-300 bg-white px-3 text-xs font-bold text-zinc-600 hover:bg-zinc-50">Limpar</button>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">{filtrados.length} de {produtos.length} produtos · {filtrados.filter((p) => Number(p.estoque_atual ?? 0) - Number(p.estoque_reservado ?? 0) <= Number(p.estoque_minimo ?? 0)).length} críticos</p>
+          </div>
 
           {filtrados.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500">
-              Nenhum produto. Cadastre o primeiro acima.
-            </p>
+            <p className="rounded-2xl border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500">Nenhum produto encontrado.</p>
           ) : (
-            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {filtrados.map((p) => {
-                const fisico = Number(p.estoque_atual ?? 0);
-                const reservado = Number(p.estoque_reservado ?? 0);
-                const disp = fisico - reservado;
-                const critico = disp <= Number(p.estoque_minimo ?? 0);
-                const reposicaoAtiva = disp <= Number(p.ponto_reposicao ?? 0);
-                const editando = editId === p.id;
+            <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-zinc-50 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                    <tr>
+                      <th className="whitespace-nowrap px-3 py-2">Código</th>
+                      <th className="px-3 py-2">Descrição</th>
+                      <th className="whitespace-nowrap px-3 py-2">Categoria</th>
+                      <th className="whitespace-nowrap px-3 py-2">Códigos</th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right">Disponível</th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right">Físico / Reserv.</th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right">Mín / Rep.</th>
+                      <th className="px-3 py-2">Local</th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right">Custo / Total</th>
+                      <th className="whitespace-nowrap px-3 py-2">Status</th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {filtrados.map((p) => {
+                      const fisico = Number(p.estoque_atual ?? 0);
+                      const reservado = Number(p.estoque_reservado ?? 0);
+                      const disp = fisico - reservado;
+                      const critico = disp <= Number(p.estoque_minimo ?? 0);
+                      const reposicaoAtiva = disp <= Number(p.ponto_reposicao ?? 0);
+                      const editando = editId === p.id;
+                      return (
+                        <tr key={p.id} className={cn("hover:bg-zinc-50", !p.ativo && "bg-zinc-50/60 opacity-60", critico && "bg-red-50/40")}>
+                          <td className="whitespace-nowrap px-3 py-2 font-mono text-xs font-bold">{p.codigo}</td>
+                          <td className="max-w-[260px] truncate px-3 py-2 font-medium" title={p.descricao}>{p.descricao}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-xs">{categoriaNome(p.categoria_id)}</td>
+                          <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">
+                            <div>{p.sku ?? "—"}</div>
+                            {p.codigo_fornecedor && <div className="text-[11px] text-zinc-400">Forn: {p.codigo_fornecedor}</div>}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums">
+                            <span className={cn(critico ? "text-red-600" : "text-zinc-900")}>{disp}</span>
+                            <span className="ml-1 text-xs font-normal text-zinc-400">{p.unidade}</span>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums text-zinc-500">{fisico} / {reservado}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums">{String(p.estoque_minimo)} / {String(p.ponto_reposicao)}</td>
+                          <td className="max-w-[140px] truncate px-3 py-2 text-xs" title={p.localizacao ?? ""}>{p.localizacao ?? "—"}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums">
+                            <div>{formatarMoeda(Number(p.custo_medio ?? 0))}</div>
+                            <div className="text-[11px] text-zinc-400">{formatarMoeda(fisico * Number(p.custo_medio ?? 0))}</div>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2">
+                            {!p.ativo ? (
+                              <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[11px] font-black text-zinc-600">INATIVO</span>
+                            ) : critico ? (
+                              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-black text-red-700 ring-1 ring-red-200">CRÍTICO</span>
+                            ) : reposicaoAtiva ? (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-black text-amber-800">REPOSIÇÃO</span>
+                            ) : (
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-black text-emerald-700">OK</span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right">
+                            <div className="flex justify-end gap-1">
+                              <button type="button" onClick={() => setFichaId(p.id)} className="inline-flex size-7 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50" title="Ficha detalhada">
+                                <Eye className="size-3.5" />
+                              </button>
+                              <button type="button" onClick={() => (editando ? setEditId(null) : abrirEdicao(p))} className={cn("inline-flex size-7 items-center justify-center rounded-lg border text-zinc-600 hover:bg-zinc-50", editando ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-200 bg-white")} title="Editar">
+                                <Pencil className="size-3.5" />
+                              </button>
+                              <button type="button" onClick={() => { setMovProduto(p.id); setAba("movs"); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="inline-flex size-7 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50" title="Movimentar">
+                                <ArrowUpDown className="size-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {/* Edição inline expandida abaixo da tabela */}
+              {editId && (() => {
+                const p = produtos.find((x) => x.id === editId);
+                if (!p) return null;
                 return (
-                  <li key={p.id} className={cn("rounded-2xl border bg-white p-4 shadow-sm", critico ? "border-red-300 ring-1 ring-red-200" : "border-zinc-200")}>
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="font-mono text-xs font-black text-zinc-500">{p.codigo}{p.sku ? ` · ${p.sku}` : ""}</p>
-                      {critico ? (
-                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-black text-red-700 ring-1 ring-red-200">CRÍTICO</span>
-                      ) : (
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-200">OK</span>
-                      )}
+                  <div className="border-t border-zinc-200 bg-zinc-50 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-black">Editar — {p.codigo} · {p.descricao}</h4>
+                      <button type="button" onClick={() => setEditId(null)} className="rounded-lg p-1 text-zinc-500 hover:bg-white"><X className="size-4" /></button>
                     </div>
-                    <p className="mt-1 truncate text-sm font-bold" title={p.descricao}>{p.descricao}</p>
-                    <p className="mt-2 text-2xl font-black tabular-nums">
-                      {String(disp)} <span className="text-xs font-medium text-zinc-400">{p.unidade} disp. · mín {String(p.estoque_minimo)}</span>
-                    </p>
-                    <p className="mt-0.5 text-xs text-zinc-400 tabular-nums">
-                      físico {String(fisico)} · reservado {String(reservado)}
-                    </p>
-                    {reposicaoAtiva && (
-                      <a href={`/admin/compras/solicitacoes/nova?produto=${p.id}`} className="mt-2 inline-flex min-h-[40px] items-center rounded-lg bg-amber-100 px-3 text-xs font-black text-amber-800 ring-1 ring-amber-200 hover:bg-amber-200">
-                        Repor: gerar solicitação
-                      </a>
-                    )}
-                    <div className="mt-2">
-                      <button type="button" onClick={() => (editando ? setEditId(null) : abrirEdicao(p))} className="inline-flex items-center gap-1 text-xs font-bold text-zinc-600 underline-offset-2 hover:underline">
-                        <Pencil className="size-3" /> {editando ? "fechar" : "editar"}
-                      </button>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      <input aria-label="Descrição" value={editDesc} onChange={(e) => setEditDesc(e.target.value)} maxLength={160} placeholder="Descrição" className={campo} />
+                      <input aria-label="Mínimo" type="number" min="0" step="0.01" value={editMin} onChange={(e) => setEditMin(e.target.value)} className={campo} />
+                      <input aria-label="Máximo" type="number" min="0" step="0.01" placeholder="Máx" value={editMax} onChange={(e) => setEditMax(e.target.value)} className={campo} />
+                      <input aria-label="Reposição" type="number" min="0" step="0.01" placeholder="Repos." value={editRep} onChange={(e) => setEditRep(e.target.value)} className={campo} />
+                      <input aria-label="Localização" value={editLoc} onChange={(e) => setEditLoc(e.target.value)} maxLength={160} placeholder="Localização" className={campo} />
+                      <select aria-label="Fornecedor principal" value={vincForn} onChange={(e) => setVincForn(e.target.value)} className={campo}>
+                        <option value="">Fornecedor…</option>
+                        {fornecedores.map((f) => (
+                          <option key={f.id} value={f.id}>{f.nome}</option>
+                        ))}
+                      </select>
                     </div>
-                    {editando && (
-                      <div className="mt-2 grid gap-2 border-t border-zinc-100 pt-2">
-                        <input aria-label="Descrição" value={editDesc} onChange={(e) => setEditDesc(e.target.value)} maxLength={160} className={campo} />
-                        <div className="grid grid-cols-3 gap-2">
-                          <input aria-label="Mínimo" type="number" min="0" step="0.01" value={editMin} onChange={(e) => setEditMin(e.target.value)} className={campo} />
-                          <input aria-label="Máximo" type="number" min="0" step="0.01" placeholder="Máx" value={editMax} onChange={(e) => setEditMax(e.target.value)} className={campo} />
-                          <input aria-label="Reposição" type="number" min="0" step="0.01" placeholder="Repos." value={editRep} onChange={(e) => setEditRep(e.target.value)} className={campo} />
-                        </div>
-                        <input aria-label="Localização" value={editLoc} onChange={(e) => setEditLoc(e.target.value)} maxLength={160} placeholder="Localização" className={campo} />
-                        <select aria-label="Fornecedor principal" value={vincForn} onChange={(e) => setVincForn(e.target.value)} className={campo}>
-                          <option value="">Fornecedor…</option>
-                          {fornecedores.map((f) => (
-                            <option key={f.id} value={f.id}>{f.nome}</option>
-                          ))}
-                        </select>
-                        <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-                          <input type="checkbox" checked={vincPrincipal} onChange={(e) => setVincPrincipal(e.target.checked)} className="size-4 accent-zinc-900" />
-                          Marcar como principal
-                        </label>
-                        <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-                          <input type="checkbox" checked={editAtivo} onChange={(e) => setEditAtivo(e.target.checked)} className="size-4 accent-zinc-900" />
-                          Produto ativo
-                        </label>
-                        <button type="button" onClick={() => salvarEdicao(p.id)} disabled={salvandoEdit} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
-                          {salvandoEdit && <LoaderCircle className="size-4 animate-spin" />}
-                          Salvar
-                        </button>
-                      </div>
-                    )}
-                  </li>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
+                        <input type="checkbox" checked={vincPrincipal} onChange={(e) => setVincPrincipal(e.target.checked)} className="size-4 accent-zinc-900" />
+                        Principal
+                      </label>
+                      <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
+                        <input type="checkbox" checked={editAtivo} onChange={(e) => setEditAtivo(e.target.checked)} className="size-4 accent-zinc-900" />
+                        Ativo
+                      </label>
+                    </div>
+                    <button type="button" onClick={() => salvarEdicao(p.id)} disabled={salvandoEdit} className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-6 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
+                      {salvandoEdit && <LoaderCircle className="size-4 animate-spin" />}
+                      Salvar
+                    </button>
+                  </div>
                 );
-              })}
-            </ul>
+              })()}
+            </div>
+          )}
+        </div>
+      ) : aba === "notas" ? (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 className="flex items-center gap-2 text-sm font-black"><FileUp className="size-4" /> Importar Nota Fiscal (DANFE / XML / PDF)</h3>
+            <p className="mt-1 text-xs text-zinc-500">Envie o XML da NF-e ou o PDF da DANFE. Os itens serão extraídos automaticamente e você poderá confirmar a entrada no estoque.</p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+              <label className="flex-1">
+                <span className="text-xs font-bold text-zinc-600">Arquivo</span>
+                <input type="file" accept=".xml,.pdf" onChange={(e) => setNfFile(e.target.files?.[0] ?? null)} className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-900 file:px-3 file:py-1 file:text-sm file:font-bold file:text-white hover:file:bg-zinc-700" />
+              </label>
+              <button type="button" onClick={handleNfProcessar} disabled={!nfFile || nfProcessando} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-6 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
+                {nfProcessando && <LoaderCircle className="size-4 animate-spin" />}
+                Extrair dados
+              </button>
+              {nfFile && <span className="text-xs text-zinc-500">{nfFile.name} · {(nfFile.size / 1024).toFixed(1)} KB</span>}
+            </div>
+          </div>
+
+          {nfPreview && (
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-black">NF-e {nfPreview.numero} · Série {nfPreview.serie}</h4>
+                  <p className="text-xs text-zinc-500">{nfPreview.emitente} · {nfPreview.cnpj} · {nfPreview.dataEmissao ? new Date(nfPreview.dataEmissao).toLocaleDateString("pt-BR") : "—"} · Chave: <span className="font-mono">{nfPreview.chave}</span></p>
+                  <p className="mt-1 text-sm font-bold">Total: {formatarMoeda(nfPreview.valorTotal)} · {nfPreview.itens.length} itens</p>
+                </div>
+                <button type="button" onClick={() => setNfPreview(null)} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100"><X className="size-4" /></button>
+              </div>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-zinc-50 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                    <tr>
+                      <th className="px-2 py-1">Código</th>
+                      <th className="px-2 py-1">Descrição</th>
+                      <th className="px-2 py-1 text-right">Qtd</th>
+                      <th className="px-2 py-1 text-right">Unit.</th>
+                      <th className="px-2 py-1 text-right">Total</th>
+                      <th className="px-2 py-1">NCM</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {nfPreview.itens.map((it, idx) => (
+                      <tr key={idx}>
+                        <td className="px-2 py-1 font-mono text-xs">{it.codigo}</td>
+                        <td className="px-2 py-1">{it.descricao}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{it.qtd}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{formatarMoeda(it.valorUnit)}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{formatarMoeda(it.valorTotal)}</td>
+                        <td className="px-2 py-1 font-mono text-xs">{it.ncm ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button type="button" onClick={handleNfConfirmar} disabled={nfConfirmando} className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-6 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60">
+                {nfConfirmando && <LoaderCircle className="size-4 animate-spin" />}
+                Confirmar entrada no estoque ({nfPreview.itens.length} itens)
+              </button>
+              <p className="mt-1 text-xs text-zinc-400">Itens inexistentes serão criados automaticamente (código = cProd da NF). Quantidades entrarão como “entrada” auditada.</p>
+            </div>
           )}
         </div>
       ) : aba === "movs" ? (
@@ -453,9 +673,7 @@ export default function EstoqueClient({
           </form>
 
           {movimentacoes.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500">
-              Nenhuma movimentação registrada.
-            </p>
+            <p className="rounded-2xl border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500">Nenhuma movimentação registrada.</p>
           ) : (
             <ul className="space-y-2">
               {movimentacoes.map((m) => (
@@ -500,6 +718,65 @@ export default function EstoqueClient({
           <p className="mt-2 text-xs text-zinc-400">Ajuste exige permissão de ADMIN/GESTOR e motivo obrigatório. Reserva preservada.</p>
         </form>
       )}
+
+      {/* Ficha detalhada */}
+      {fichaProduto && (
+        <div className="fixed inset-0 z-50 flex">
+          <button type="button" aria-label="Fechar ficha" onClick={() => setFichaId(null)} className="flex-1 bg-black/40 backdrop-blur-sm" />
+          <div className="ml-auto flex h-full w-full max-w-[520px] flex-col overflow-hidden bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-zinc-200 p-4">
+              <div>
+                <p className="font-mono text-xs font-black text-zinc-500">{fichaProduto.codigo} {fichaProduto.sku ? `· ${fichaProduto.sku}` : ""}</p>
+                <h3 className="text-lg font-black">{fichaProduto.descricao}</h3>
+                <p className="text-xs text-zinc-500">{categoriaNome(fichaProduto.categoria_id)} · {fichaProduto.unidade} · {fichaProduto.ativo ? "Ativo" : "Inativo"}</p>
+              </div>
+              <button type="button" onClick={() => setFichaId(null)} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"><X className="size-5" /></button>
+            </div>
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-zinc-50 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Disponível</p>
+                  <p className="text-2xl font-black tabular-nums">{Number(fichaProduto.estoque_atual ?? 0) - Number(fichaProduto.estoque_reservado ?? 0)} <span className="text-xs font-normal text-zinc-500">{fichaProduto.unidade}</span></p>
+                  <p className="text-xs text-zinc-500">Físico {String(fichaProduto.estoque_atual)} · Reservado {String(fichaProduto.estoque_reservado)}</p>
+                </div>
+                <div className="rounded-xl bg-zinc-50 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Financeiro</p>
+                  <p className="text-sm font-bold">{formatarMoeda(Number(fichaProduto.custo_medio ?? 0))} <span className="text-xs font-normal text-zinc-500">médio</span></p>
+                  <p className="text-xs text-zinc-500">Último {formatarMoeda(Number(fichaProduto.ultimo_custo ?? 0))} · Total {formatarMoeda(Number(fichaProduto.estoque_atual ?? 0) * Number(fichaProduto.custo_medio ?? 0))}</p>
+                </div>
+                <div className="rounded-xl bg-zinc-50 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Mín / Máx / Reposição</p>
+                  <p className="text-sm font-bold tabular-nums">{String(fichaProduto.estoque_minimo)} / {fichaProduto.estoque_maximo ?? "—"} / {String(fichaProduto.ponto_reposicao)}</p>
+                  <p className="text-xs text-zinc-500">Local: {fichaProduto.localizacao ?? "—"}</p>
+                </div>
+                <div className="rounded-xl bg-zinc-50 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Códigos</p>
+                  <p className="font-mono text-xs">SKU: {fichaProduto.sku ?? "—"}</p>
+                  <p className="font-mono text-xs">Forn: {fichaProduto.codigo_fornecedor ?? "—"}</p>
+                  <p className="text-xs text-zinc-500">Subcat: {fichaProduto.subcategoria ?? "—"}</p>
+                </div>
+              </div>
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wide text-zinc-500">Movimentações recentes</h4>
+                <ul className="mt-2 space-y-1">
+                  {movimentacoes.filter((m) => m.produto_id === fichaProduto.id).slice(0, 8).map((m) => (
+                    <li key={m.id} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2 text-xs">
+                      <span>{m.tipo} · {formatarDataHora(m.created_at)} · {m.quantidade} {fichaProduto.unidade}</span>
+                      <span className="font-mono text-zinc-500">{m.observacao?.slice(0, 40) ?? ""}</span>
+                    </li>
+                  ))}
+                  {movimentacoes.filter((m) => m.produto_id === fichaProduto.id).length === 0 && <li className="text-xs text-zinc-400">Nenhuma movimentação.</li>}
+                </ul>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => { setFichaId(null); abrirEdicao(fichaProduto); }} className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-zinc-300 bg-white px-4 text-sm font-bold hover:bg-zinc-50"><Pencil className="size-4" /> Editar</button>
+                <button type="button" onClick={() => { setFichaId(null); setMovProduto(fichaProduto.id); setAba("movs"); }} className="inline-flex min-h-[44px] items-center gap-1 rounded-lg bg-zinc-900 px-4 text-sm font-bold text-white hover:bg-zinc-700"><ArrowUpDown className="size-4" /> Movimentar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <p className="text-xs text-zinc-400">Movimentações de hoje: {movimentacoes.filter((m) => m.created_at.slice(0, 10) === hojeISO()).length} · Valor em estoque: {formatarMoeda(produtos.reduce((s, p) => s + Number(p.estoque_atual ?? 0) * Number(p.custo_medio ?? 0), 0))}</p>
     </div>
   );
