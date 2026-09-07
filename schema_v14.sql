@@ -14,6 +14,21 @@
 -- Idempotente. Sem migração de dados.
 -- ============================================================
 
+-- ---------- 0. auditoria_logs: expandir CHECK para TRIAGEM / OS_CREATED ----------
+do $$
+begin
+  if exists (select 1 from pg_constraint where conname = 'auditoria_logs_acao_check') then
+    alter table public.auditoria_logs drop constraint auditoria_logs_acao_check;
+  end if;
+end
+$$;
+alter table public.auditoria_logs add constraint auditoria_logs_acao_check
+  check (acao in ('INSERT', 'UPDATE', 'DELETE', 'STATUS_CHANGE', 'LOGIN',
+    'LOGOUT', 'APPROVAL', 'REJECTION', 'STOCK_ENTRY', 'STOCK_EXIT',
+    'STOCK_ADJUSTMENT', 'MEMBERSHIP_CHANGE', 'ROLE_CHANGE', 'QR_REGENERATED',
+    'FOTO_ADICIONADA', 'TRIAGEM', 'OS_CREATED', 'OS_CONCLUIDA', 'CHECKLIST_CONCLUIDA',
+    'COST_ADDED', 'STOCK_CONSUMED'));
+
 create or replace function public.criar_os_a_partir_de_triagem(
   p_chamado_id uuid,
   p_organization_id uuid,
