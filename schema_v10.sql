@@ -201,7 +201,6 @@ alter table public.checklist_itens add column if not exists foto_obrigatoria boo
 alter table public.checklist_itens add column if not exists obs_obrigatoria boolean not null default false;
 alter table public.checklist_itens add column if not exists valor_esperado text;
 alter table public.checklist_itens add column if not exists opcoes jsonb not null default '[]';
-alter table public.checklist_itens add column if not exists opcoes jsonb not null default '[]';
 
 alter table public.checklist_respostas add column if not exists valor text;
 
