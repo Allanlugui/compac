@@ -90,6 +90,14 @@ export default async function SolicitacaoPage({ params }: Props) {
     );
   }
 
+  // O.S. vinculada (quando solicitação originada de O.S.)
+  const chamadoId = (sol as unknown as { chamado_id: string | null }).chamado_id ?? null;
+  let chamadoOS: { id: string; os_status: string | null; status: string } | null = null;
+  if (chamadoId) {
+    const { data: ch } = await supabase.from("chamados").select("id, os_status, status").eq("id", chamadoId).eq("organization_id", ctx.orgId).maybeSingle();
+    chamadoOS = ch as unknown as { id: string; os_status: string | null; status: string } | null;
+  }
+
   const prodsOpts = ((prodsData ?? []) as {
     id: string; codigo: string; unidade: string;
     estoque_atual: number; estoque_reservado: number; estoque_minimo: number;
@@ -129,6 +137,17 @@ export default async function SolicitacaoPage({ params }: Props) {
         voltar={{ href: "/admin/compras/solicitacoes", rotulo: "Solicitações" }}
         acoes={<StatusSolicBadge status={sol.status} />}
       />
+
+      {chamadoOS && (
+        <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-black">O.S. vinculada</h2>
+          <p className="mt-1 text-sm">
+            <Link href={`/admin/chamados/${chamadoOS.id}`} className="font-bold text-zinc-900 underline-offset-2 hover:underline">
+              OS-{chamadoOS.id.slice(0, 8).toUpperCase()} · {chamadoOS.os_status ?? chamadoOS.status}
+            </Link>
+          </p>
+        </section>
+      )}
 
       <Secao icone={<Clock className="size-4" />} titulo="Situação e workflow">
         <dl className="grid gap-2 text-sm sm:grid-cols-3">

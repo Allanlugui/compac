@@ -38,6 +38,7 @@ import FotosDurante from "./FotosDurante";
 import ComprasDoChamado from "./ComprasDoChamado";
 import ExecucaoForm from "./ExecucaoForm";
 import ConsumoEstoque from "./ConsumoEstoque";
+import SolicitarMaterial from "./SolicitarMaterial";
 import ExecucaoChecklist, { type ModeloExec, type ExecucaoPassada } from "./ExecucaoChecklist";
 import AtividadesList from "./AtividadesList";
 import ServicosList from "./ServicosList";
@@ -698,6 +699,12 @@ const totalMateriais = consumos.reduce(
         titulo="Materiais, terceiros e custos"
       >
         <div className="space-y-4">
+          <div>
+            <p className="mb-2 text-xs font-bold tracking-wide text-zinc-500 uppercase">
+              Solicitar material para esta O.S.
+            </p>
+            <SolicitarMaterial chamadoId={chamado.id} produtos={produtos.map((p) => ({ id: p.id, codigo: p.codigo, descricao: p.descricao }))} />
+          </div>
           <div>
             <p className="mb-2 text-xs font-bold tracking-wide text-zinc-500 uppercase">
               Baixa do estoque
