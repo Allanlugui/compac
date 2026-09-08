@@ -1276,3 +1276,98 @@ export async function encerrarOS(input: { chamadoId: string }): Promise<AcaoResu
   revalidarChamado(input.chamadoId);
   return { ok: true };
 }
+
+export async function solicitarMaterialOS(input: {
+  chamadoId: string;
+  produtoId?: string | null;
+  descricao: string;
+  quantidade: number;
+  unidade?: string;
+  justificativa?: string;
+}): Promise<AcaoResult> {
+  const ctx = await requireOrg();
+  exigirPermissao(ctx, "os.executar");
+  const supabase = await createClient();
+  const { data: os } = await supabase
+    .from("chamados")
+    .select("id, os_status, ativo_id")
+    .eq("id", input.chamadoId)
+    .eq("organization_id", ctx.orgId)
+    .maybeSingle();
+  if (!os || !os.os_status) return { ok: false, error: "O.S. não encontrada." };
+  if (["concluida", "encerrada"].includes(os.os_status)) return { ok: false, error: "O.S. já concluída/encerrada." };
+
+  const descricao = input.descricao.trim().slice(0, 160);
+  const quantidade = Number(input.quantidade);
+  if (!descricao || descricao.length < 2) return { ok: false, error: "Descrição inválida." };
+  if (!Number.isFinite(quantidade) || quantidade <= 0) return { ok: false, error: "Quantidade inválida." };
+
+  // Criar solicitação vinculada à O.S.
+  const { data: solic, error } = await supabase
+    .from("solicitacoes_compra")
+    .insert({
+      organization_id: ctx.orgId,
+      chamado_id: input.chamadoId,
+      setor: "Manutenção",
+      solicitante: ctx.email,
+      item: descricao,
+      justificativa: (input.justificativa ?? "").trim().slice(0, 500) || `Solicitado para O.S. ${input.chamadoId.slice(0, 8)}`,
+      quantidade,
+      valor_estimado: 0,
+      status: "rascunho",
+      origem: "portal",
+      criado_por: ctx.userId,
+    } as unknown as Record<string, unknown>)
+    .select("id")
+    .single();
+
+  if (error || !solic) return { ok: false, error: "Não foi possível solicitar material." };
+
+  // Criar item vinculado
+  await supabase.from("solicitacao_itens").insert({
+    organization_id: ctx.orgId,
+    solicitacao_id: (solic as { id: string }).id,
+    produto_id: input.produtoId ?? null,
+    descricao,
+    quantidade,
+    unidade: (input.unidade ?? "UN").slice(0, 10),
+    justificativa: input.justificativa ?? null,
+  } as unknown as Record<string, unknown>);
+
+  // Muda O.S. para aguardando peça se ainda não estiver
+  if (!["aguardando_peca", "aguardando_terceiro"].includes(os.os_status)) {
+    await supabase
+      .from("chamados")
+      .update({ os_status: "aguardando_peca" })
+      .eq("id", input.chamadoId)
+      .eq("organization_id", ctx.orgId);
+    await supabase.from("os_status_historico").insert({
+      organization_id: ctx.orgId,
+      os_id: input.chamadoId,
+      de: os.os_status,
+      para: "aguardando_peca",
+      user_id: ctx.userId,
+    });
+  }
+
+  await registrarLog(supabase, {
+    tabela: "solicitacoes_compra",
+    registro_id: (solic as { id: string }).id,
+    acao: "REQUEST_CREATED",
+    dados_anteriores: null,
+    dados_novos: { chamado_id: input.chamadoId, descricao, quantidade },
+    executado_por: ctx.email,
+    organization_id: ctx.orgId,
+    user_id: ctx.userId,
+  });
+
+  await notificar({
+    tipo: "solicitacao",
+    titulo: "Material solicitado para O.S.",
+    descricao: `${descricao} (${quantidade})`,
+    link: `/admin/compras/solicitacoes/${(solic as { id: string }).id}`,
+  });
+
+  revalidarChamado(input.chamadoId);
+  return { ok: true };
+}

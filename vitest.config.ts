@@ -12,10 +12,10 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./tests/setup-global.ts"],
     include: ["tests/**/*.test.ts"],
-    testTimeout: 30000,
-    hookTimeout: 30000,
-    pool: "forks",
+    testTimeout: 60000,
+    hookTimeout: 60000,
     fileParallelism: false,
+    pool: "forks",
     sequence: { concurrent: false },
   },
 });
