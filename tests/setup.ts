@@ -25,8 +25,9 @@ const userClients = new Map<string, SupabaseClient>();
 async function createJwtClient(userId: string): Promise<SupabaseClient> {
   if (userClients.has(userId)) return userClients.get(userId)!;
   const secret = new TextEncoder().encode(JWT_SECRET);
-  const jwt = await new SignJWT({ role: "authenticated", aud: "authenticated" })
+  const jwt = await new SignJWT({ role: "authenticated", aud: "authenticated", ref: "ialjfeltqpbgrxtymfwa" })
     .setProtectedHeader({ alg: "HS256" })
+    .setIssuer("https://ialjfeltqpbgrxtymfwa.supabase.co/auth/v1")
     .setSubject(userId)
     .setExpirationTime("2h")
     .setIssuedAt()
@@ -40,12 +41,13 @@ async function createJwtClient(userId: string): Promise<SupabaseClient> {
 }
 
 function uniqueEmail(prefix: string): string {
+  const suffix = crypto.randomUUID().slice(0, 8);
   let attempt = 0;
   while (true) {
     const email =
       attempt === 0
-        ? `${prefix}@sga-test.local`
-        : `${prefix}+${attempt}@sga-test.local`;
+        ? `${prefix}-${suffix}@sga-test.local`
+        : `${prefix}-${suffix}+${attempt}@sga-test.local`;
     if (!usedEmails.has(email)) { usedEmails.add(email); return email; }
     attempt++;
   }
@@ -108,6 +110,8 @@ async function criarMembership(userId: string, orgId: string) {
 export async function setupOrg(slug: string): Promise<TestOrg> {
   const orgId = await criarOrganizacao(slug);
   const email = uniqueEmail(`user-${orgId.slice(0, 6)}`);
+  // Small delay to avoid auth rate limiting
+  await new Promise((r) => setTimeout(r, 300));
   const userId = await criarUsuario(email);
   await criarPerfil(userId, email);
   await criarMembership(userId, orgId);
