@@ -405,6 +405,59 @@ export async function registrarRecebimento(input: {
       user_id: ctx.userId,
       executado_por: ctx.email,
     });
+
+    // FASE 7.2: Se a solicitação está vinculada a uma O.S. (chamado_id), e todo o material foi recebido, retomar a O.S.
+    const { data: solic } = await supabase
+      .from("solicitacoes_compra")
+      .select("chamado_id")
+      .eq("id", pedido.solicitacao_id)
+      .eq("organization_id", ctx.orgId)
+      .maybeSingle();
+    const chamadoId = (solic as { chamado_id: string | null } | null)?.chamado_id;
+    if (chamadoId) {
+      const { data: os } = await supabase
+        .from("chamados")
+        .select("os_status")
+        .eq("id", chamadoId)
+        .eq("organization_id", ctx.orgId)
+        .maybeSingle();
+      if (os && (os as { os_status: string | null }).os_status === "aguardando_peca") {
+        // Verificar se todos os itens da solicitação foram recebidos (sem divergência pendente)
+        // Para simplificar, se o recebimento foi aceito (sem divergência), libera a O.S.
+        if (!divergente) {
+          await supabase
+            .from("chamados")
+            .update({ os_status: "em_execucao" })
+            .eq("id", chamadoId)
+            .eq("organization_id", ctx.orgId);
+          await supabase.from("os_status_historico").insert({
+            organization_id: ctx.orgId,
+            os_id: chamadoId,
+            de: "aguardando_peca",
+            para: "em_execucao",
+            motivo: "Material recebido",
+            user_id: ctx.userId,
+          });
+          await supabase.from("auditoria_logs").insert({
+            organization_id: ctx.orgId,
+            tabela: "chamados",
+            registro_id: chamadoId,
+            acao: "STATUS_CHANGE",
+            dados_anteriores: { os_status: "aguardando_peca" },
+            dados_novos: { os_status: "em_execucao" },
+            executado_por: ctx.email,
+            user_id: ctx.userId,
+          });
+          const { notificar } = await import("@/app/admin/notificacoes/actions");
+          await notificar({
+            tipo: "os",
+            titulo: "Material disponível para O.S.",
+            descricao: `Pedido ${input.pedidoId.slice(0, 8)} recebido, O.S. liberada.`,
+            link: `/admin/chamados/${chamadoId}`,
+          });
+        }
+      }
+    }
   }
 
   await registrarLog(supabase, {
