@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
@@ -26,7 +26,7 @@ import {
   queryTotalAtivos,
 } from "@/lib/analytics/queries";
 
-export const metadata: Metadata = { title: "Dashboard Executivo · SGA-M" };
+export const metadata: Metadata = { title: "Dashboard Â· SGA-M" };
 
 const PERIODOS: { id: PeriodoId; rotulo: string }[] = [
   { id: "7d", rotulo: "7 dias" },
@@ -55,7 +55,7 @@ function Card({
         {estado === "insufficient_data" ? (
           <p className="text-sm font-medium text-amber-700">Dados insuficientes</p>
         ) : estado === "empty" ? (
-          <p className="text-sm text-zinc-500">Nenhum dado no período</p>
+          <p className="text-sm text-zinc-500">Nenhum dado no perÃ­odo</p>
         ) : estado === "no_deadline" ? (
           <p className="text-sm text-zinc-500">Sem prazo</p>
         ) : estado === "error" ? (
@@ -182,13 +182,13 @@ export default async function DashboardPage({
   ]);
 
   const porStatusEntries = Object.entries(porStatus) as [string, number][];
-  const slaDentro = sla.taxaDentro !== null ? `${sla.taxaDentro.toFixed(1)}%` : "—";
+  const slaDentro = sla.taxaDentro !== null ? `${sla.taxaDentro.toFixed(1)}%` : "â€”";
 
   return (
     <div className="space-y-6">
       <PageHeader
-        titulo="Dashboard Executivo"
-        descricao={`${ctx.orgNome} · Período: ${periodo} · America/Sao_Paulo`}
+        titulo="Dashboard"
+        descricao={`${ctx.orgNome} Â· PerÃ­odo: ${periodo} Â· America/Sao_Paulo`}
         acoes={
           <div className="flex items-center gap-2">
             <div className="flex gap-1 rounded-xl border border-zinc-200 bg-zinc-100 p-1">
@@ -209,23 +209,23 @@ export default async function DashboardPage({
         }
       />
 
-      {/* N1 — Saúde operacional */}
+      {/* N1 â€” SaÃºde operacional */}
       <section className="space-y-3">
-        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N1 — Saúde operacional</h2>
+        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N1 â€” SaÃºde operacional</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Card titulo="Total de ativos" valor={totalAtivos} href="/admin/ativos" sub="Todos cadastrados" />
-          <Card titulo="Ativos críticos" valor={criticos} href="/admin/ativos?critico=1" sub={`${totalAtivos > 0 ? ((criticos / totalAtivos) * 100).toFixed(1) : "0"}% do total`} />
+          <Card titulo="Ativos crÃ­ticos" valor={criticos} href="/admin/ativos?critico=1" sub={`${totalAtivos > 0 ? ((criticos / totalAtivos) * 100).toFixed(1) : "0"}% do total`} />
           <Card
             titulo="Disponibilidade"
-            valor={disponibilidade.value !== null ? `${(disponibilidade.value * 100).toFixed(1)}%` : "—"}
+            valor={disponibilidade.value !== null ? `${(disponibilidade.value * 100).toFixed(1)}%` : "â€”"}
             estado={disponibilidade.state as "insufficient_data"}
-            sub={disponibilidade.state === "insufficient_data" ? "É necessário histórico adicional" : undefined}
+            sub={disponibilidade.state === "insufficient_data" ? "Ã‰ necessÃ¡rio histÃ³rico adicional" : undefined}
           />
-          <Card titulo="Ativos por status" valor={`${porStatusEntries.length} categorias`} sub={porStatusEntries.map(([k, v]) => `${k}: ${v}`).join(" · ") || "Sem dados"} />
+          <Card titulo="Ativos por status" valor={`${porStatusEntries.length} categorias`} sub={porStatusEntries.map(([k, v]) => `${k}: ${v}`).join(" Â· ") || "Sem dados"} />
         </div>
         {porStatusEntries.length > 0 && (
           <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Ativos por status — distribuição</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Ativos por status â€” distribuiÃ§Ã£o</p>
             <div className="mt-3 flex h-4 overflow-hidden rounded-full">
               {porStatusEntries.map(([status, qtd]) => {
                 const total = porStatusEntries.reduce((s, [, v]) => s + v, 0);
@@ -246,37 +246,37 @@ export default async function DashboardPage({
         )}
       </section>
 
-      {/* N2 — Eficiência */}
+      {/* N2 â€” EficiÃªncia */}
       <section className="space-y-3">
-        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N2 — Eficiência operacional</h2>
+        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N2 â€” EficiÃªncia operacional</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Card titulo="O.S. abertas" valor={osAbertas} href="/admin/chamados?os_status=aberta" sub={`Backlog O.S.: ${backlogOS} · Demanda: ${backlogDemanda}`} />
-          <Card titulo="Backlog" valor={`${backlogOS}`} sub={`Demanda: ${backlogDemanda} · Atrasado depende de prazo`} />
+          <Card titulo="O.S. abertas" valor={osAbertas} href="/admin/chamados?os_status=aberta" sub={`Backlog O.S.: ${backlogOS} Â· Demanda: ${backlogDemanda}`} />
+          <Card titulo="Backlog" valor={`${backlogOS}`} sub={`Demanda: ${backlogDemanda} Â· Atrasado depende de prazo`} />
           <Card
-            titulo="Tempo médio de resolução"
-            valor={mttr.value !== null ? formatarDuracaoMedia(mttr.value) : "—"}
+            titulo="Tempo mÃ©dio de resoluÃ§Ã£o"
+            valor={mttr.value !== null ? formatarDuracaoMedia(mttr.value) : "â€”"}
             estado={mttr.state as "insufficient_data"}
-            sub="MTTR: created_at → concluido_em"
+            sub="MTTR: created_at â†’ concluido_em"
           />
           <Card
-            titulo="Tempo médio de execução"
-            valor={texec.value !== null ? formatarDuracaoMedia(texec.value) : "—"}
+            titulo="Tempo mÃ©dio de execuÃ§Ã£o"
+            valor={texec.value !== null ? formatarDuracaoMedia(texec.value) : "â€”"}
             estado={texec.state as "insufficient_data"}
-            sub="data_inicio → data_fim"
+            sub="data_inicio â†’ data_fim"
           />
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
           <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">SLA — dentro/próximo/atrasado/sem prazo</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">SLA â€” dentro/prÃ³ximo/atrasado/sem prazo</p>
             <div className="mt-3">
               <div className="flex h-3 overflow-hidden rounded-full bg-zinc-100">
                 <div className="bg-emerald-500" style={{ width: `${sla.totalComPrazo ? (sla.dentro / sla.totalComPrazo) * 100 : 0}%` }} title={`Dentro: ${sla.dentro}`} />
-                <div className="bg-amber-400" style={{ width: `${sla.totalComPrazo ? (sla.proximo / sla.totalComPrazo) * 100 : 0}%` }} title={`Próximo: ${sla.proximo}`} />
+                <div className="bg-amber-400" style={{ width: `${sla.totalComPrazo ? (sla.proximo / sla.totalComPrazo) * 100 : 0}%` }} title={`PrÃ³ximo: ${sla.proximo}`} />
                 <div className="bg-red-500" style={{ width: `${sla.totalComPrazo ? (sla.atrasado / sla.totalComPrazo) * 100 : 0}%` }} title={`Atrasado: ${sla.atrasado}`} />
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <span className="rounded-full bg-emerald-100 px-2 py-1 font-bold text-emerald-800">Dentro: {sla.dentro} ({slaDentro})</span>
-                <span className="rounded-full bg-amber-100 px-2 py-1 font-bold text-amber-800">Próximo (2d): {sla.proximo}</span>
+                <span className="rounded-full bg-amber-100 px-2 py-1 font-bold text-amber-800">PrÃ³ximo (2d): {sla.proximo}</span>
                 <span className="rounded-full bg-red-100 px-2 py-1 font-bold text-red-800">Atrasado: {sla.atrasado}</span>
                 <span className="rounded-full bg-zinc-100 px-2 py-1">Sem prazo: {sla.semPrazo}</span>
               </div>
@@ -284,52 +284,54 @@ export default async function DashboardPage({
           </div>
           <Card
             titulo="MTBF"
-            valor={mtbf.value !== null ? formatarDuracaoMedia(mtbf.value) : "—"}
+            valor={mtbf.value !== null ? formatarDuracaoMedia(mtbf.value) : "â€”"}
             estado={mtbf.state as "insufficient_data"}
-            sub={mtbf.state === "insufficient_data" ? "≥3 falhas corretiva com ativo_id" : "Média de intervalos entre falhas"}
+            sub={mtbf.state === "insufficient_data" ? "â‰¥3 falhas corretiva com ativo_id" : "MÃ©dia de intervalos entre falhas"}
           />
         </div>
       </section>
 
-      {/* N3 — Recursos */}
+      {/* N3 â€” Recursos */}
       <section className="space-y-3">
-        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N3 — Recursos e demanda</h2>
+        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N3 â€” Recursos e demanda</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Card titulo="Estoque — disponível" valor={estoque.disponivel} href="/admin/estoque" sub={`Críticos: ${estoque.criticos} · Abaixo reposição: ${estoque.abaixoReposicao}`} />
-          <Card titulo="Estoque — valor físico" valor={formatarMoeda(estoque.valorFisico)} sub={`${estoque.total} produtos · físico × custo_médio`} />
-          <Card titulo="Solicitações pendentes" valor={solicitacoes} href="/admin/compras/solicitacoes" sub="rascunho/enviada/em_analise/em_cotacao" />
-          <Card titulo="Consumo por produto" valor={`${consumo.porQuantidade.length} produtos`} sub="Top consumo no período" />
+          <Card titulo="Estoque â€” disponÃ­vel" valor={estoque.disponivel} href="/admin/estoque" sub={`CrÃ­ticos: ${estoque.criticos} Â· Abaixo reposiÃ§Ã£o: ${estoque.abaixoReposicao}`} />
+          <Card titulo="Estoque â€” valor fÃ­sico" valor={formatarMoeda(estoque.valorFisico)} sub={`${estoque.total} produtos Â· fÃ­sico Ã— custo_mÃ©dio`} />
+          <Card titulo="SolicitaÃ§Ãµes pendentes" valor={solicitacoes} href="/admin/compras/solicitacoes" sub="rascunho/enviada/em_analise/em_cotacao" />
+          <Card titulo="Consumo por produto" valor={`${consumo.porQuantidade.length} produtos`} sub="Top consumo no perÃ­odo" />
         </div>
         <div className="grid gap-3 lg:grid-cols-3">
           <BarList titulo="Top ativos por O.S. (Top 10)" itens={topOS} hrefBase="/admin/chamados" />
           <BarList titulo="Top ativos por custo (Top 10)" itens={topCusto.map(([id, v]) => [id, Math.round(v)] as [string, number])} hrefBase="/admin/chamados" />
-          <BarList titulo="Top ativos por reincidência (Top 10)" itens={topReinc} hrefBase="/admin/chamados" />
+          <BarList titulo="Top ativos por reincidÃªncia (Top 10)" itens={topReinc} hrefBase="/admin/chamados" />
         </div>
         {consumo.porQuantidade.length > 0 && (
           <div className="grid gap-3 lg:grid-cols-2">
-            <BarList titulo="Top consumo — quantidade" itens={consumo.porQuantidade.slice(0, 10)} />
-            <BarList titulo="Top consumo — valor" itens={consumo.porValor.slice(0, 10).map(([id, v]) => [id, Math.round(v)] as [string, number])} />
+            <BarList titulo="Top consumo â€” quantidade" itens={consumo.porQuantidade.slice(0, 10)} />
+            <BarList titulo="Top consumo â€” valor" itens={consumo.porValor.slice(0, 10).map(([id, v]) => [id, Math.round(v)] as [string, number])} />
           </div>
         )}
       </section>
 
-      {/* N4 — Custos */}
+      {/* N4 â€” Custos */}
       <section className="space-y-3">
-        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N4 — Custos</h2>
+        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N4 â€” Custos</h2>
         <Card
           titulo="Custo total das O.S."
           valor={formatarMoeda(custoTotal)}
           href="/admin/relatorios?aba=custos"
-          sub="Materiais consumidos + mão de obra + serviços + outros (período)"
+          sub="Materiais consumidos + mÃ£o de obra + serviÃ§os + outros (perÃ­odo)"
         />
         <p className="text-xs text-zinc-500">
-          Custo não inclui compras de aquisição não consumidas. Teste de regressão: Compra R$1.000 + Consumo R$100 = Custo R$100.
+          Custo nÃ£o inclui compras de aquisiÃ§Ã£o nÃ£o consumidas. Teste de regressÃ£o: Compra R$1.000 + Consumo R$100 = Custo R$100.
         </p>
       </section>
 
       <p className="text-xs text-zinc-400">
-        Período padrão: 30 dias · Timezone: America/Sao_Paulo (UTC no banco) · Tenant: {ctx.orgId.slice(0, 8)} · Cache: org+filtros+role+período
+        PerÃ­odo padrÃ£o: 30 dias Â· Timezone: America/Sao_Paulo (UTC no banco) Â· Tenant: {ctx.orgId.slice(0, 8)} Â· Cache: org+filtros+role+perÃ­odo
       </p>
     </div>
   );
 }
+
+

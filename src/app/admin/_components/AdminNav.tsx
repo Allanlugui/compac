@@ -51,23 +51,29 @@ export const SECOES_NAV: SecaoNav[] = [
         href: "/admin/dashboard",
         rotulo: "Dashboard",
         Icone: LayoutDashboard,
-        ativoEm: (p) =>
-          p.startsWith("/admin/dashboard") || p.startsWith("/admin/chamados"),
+        ativoEm: (p) => p.startsWith("/admin/dashboard"),
         papeis: TODOS,
       },
       {
         href: "/admin/ativos",
-        rotulo: "Ativos & QR",
+        rotulo: "Ativos",
         Icone: QrCode,
         ativoEm: (p) => p.startsWith("/admin/ativos"),
         papeis: ["ADMIN", "GESTOR", "TECNICO"],
       },
       {
-        href: "/admin/estoque",
-        rotulo: "Estoque",
-        Icone: Package,
-        ativoEm: (p) => p.startsWith("/admin/estoque"),
-        papeis: OPERACIONAL,
+        href: "/admin/chamados",
+        rotulo: "Chamados",
+        Icone: ClipboardCheck,
+        ativoEm: (p) => p.startsWith("/admin/chamados"),
+        papeis: TODOS,
+      },
+      {
+        href: "/admin/ordens-servico",
+        rotulo: "Ordens de Serviço",
+        Icone: Wrench,
+        ativoEm: (p) => p.startsWith("/admin/ordens-servico") || p.startsWith("/admin/chamados"),
+        papeis: ["ADMIN", "GESTOR", "TECNICO", "AUDITOR"],
       },
       {
         href: "/admin/preventivas",
@@ -89,18 +95,25 @@ export const SECOES_NAV: SecaoNav[] = [
     titulo: "Suprimentos",
     itens: [
       {
-        href: "/admin/compras",
-        rotulo: "Compras",
-        Icone: ShoppingCart,
-        ativoEm: (p) => p.startsWith("/admin/compras") && !p.startsWith("/admin/compras/solicitacoes") && !p.startsWith("/admin/compras/pedidos"),
-        papeis: SUPRIMENTOS,
+        href: "/admin/estoque",
+        rotulo: "Estoque",
+        Icone: Package,
+        ativoEm: (p) => p.startsWith("/admin/estoque"),
+        papeis: OPERACIONAL,
       },
       {
         href: "/admin/compras/solicitacoes",
         rotulo: "Solicitações",
         Icone: ClipboardCheck,
-        ativoEm: (p) => p.startsWith("/admin/compras/solicitacoes") || p.startsWith("/admin/compras/pedidos"),
-        papeis: ["ADMIN", "GESTOR", "COMPRAS", "TECNICO", "AUDITOR", "SOLICITANTE"],
+        ativoEm: (p) => p.startsWith("/admin/compras/solicitacoes"),
+        papeis: TODOS,
+      },
+      {
+        href: "/admin/compras",
+        rotulo: "Compras",
+        Icone: ShoppingCart,
+        ativoEm: (p) => p.startsWith("/admin/compras") && !p.startsWith("/admin/compras/solicitacoes") && !p.startsWith("/admin/compras/pedidos"),
+        papeis: SUPRIMENTOS,
       },
       {
         href: "/admin/fornecedores",
@@ -109,6 +122,11 @@ export const SECOES_NAV: SecaoNav[] = [
         ativoEm: (p) => p.startsWith("/admin/fornecedores"),
         papeis: SUPRIMENTOS,
       },
+    ],
+  },
+  {
+    titulo: "Inteligência",
+    itens: [
       {
         href: "/admin/relatorios",
         rotulo: "Relatórios",
@@ -116,10 +134,24 @@ export const SECOES_NAV: SecaoNav[] = [
         ativoEm: (p) => p.startsWith("/admin/relatorios"),
         papeis: ["ADMIN", "GESTOR", "COMPRAS", "AUDITOR"],
       },
+      {
+        href: "/admin/mapa",
+        rotulo: "Mapa",
+        Icone: Building2,
+        ativoEm: (p) => p.startsWith("/admin/mapa") || p.startsWith("/admin/estrutura"),
+        papeis: TODOS,
+      },
+      {
+        href: "/admin/busca",
+        rotulo: "Busca",
+        Icone: Building2,
+        ativoEm: (p) => p.startsWith("/admin/busca"),
+        papeis: TODOS,
+      },
     ],
   },
   {
-    titulo: "Sistema",
+    titulo: "Administração",
     itens: [
       {
         href: "/admin/estrutura",
@@ -127,12 +159,6 @@ export const SECOES_NAV: SecaoNav[] = [
         Icone: Building2,
         ativoEm: (p) => p.startsWith("/admin/estrutura"),
         papeis: ["ADMIN", "GESTOR"],
-      },      {
-        href: "/admin/auditoria",
-        rotulo: "Auditoria",
-        Icone: ShieldCheck,
-        ativoEm: (p) => p.startsWith("/admin/auditoria"),
-        papeis: ["ADMIN", "GESTOR", "AUDITOR"],
       },
       {
         href: "/admin/usuarios",
@@ -140,6 +166,13 @@ export const SECOES_NAV: SecaoNav[] = [
         Icone: Users,
         ativoEm: (p) => p.startsWith("/admin/usuarios"),
         papeis: ["ADMIN"],
+      },
+      {
+        href: "/admin/auditoria",
+        rotulo: "Auditoria",
+        Icone: ShieldCheck,
+        ativoEm: (p) => p.startsWith("/admin/auditoria"),
+        papeis: ["ADMIN", "GESTOR", "AUDITOR"],
       },
     ],
   },
@@ -151,8 +184,14 @@ const ITENS_BOTTOM: ItemNav[] = [
     href: "/admin/dashboard",
     rotulo: "Painel",
     Icone: LayoutDashboard,
-    ativoEm: (p) =>
-      p.startsWith("/admin/dashboard") || p.startsWith("/admin/chamados"),
+    ativoEm: (p) => p.startsWith("/admin/dashboard"),
+    papeis: TODOS,
+  },
+  {
+    href: "/admin/chamados",
+    rotulo: "Chamados",
+    Icone: ClipboardCheck,
+    ativoEm: (p) => p.startsWith("/admin/chamados") || p.startsWith("/admin/ordens-servico"),
     papeis: TODOS,
   },
   {
@@ -170,25 +209,18 @@ const ITENS_BOTTOM: ItemNav[] = [
     papeis: OPERACIONAL,
   },
   {
-    href: "/admin/compras",
-    rotulo: "Compras",
+    href: "/admin/compras/solicitacoes",
+    rotulo: "Solicit.",
     Icone: ShoppingCart,
     ativoEm: (p) => p.startsWith("/admin/compras"),
-    papeis: SUPRIMENTOS,
+    papeis: TODOS,
   },
   {
-    href: "/admin/relatorios",
-    rotulo: "Relat.",
-    Icone: ChartColumn,
-    ativoEm: (p) => p.startsWith("/admin/relatorios"),
-    papeis: ["ADMIN", "GESTOR", "COMPRAS", "AUDITOR"],
-  },
-  {
-    href: "/admin/auditoria",
-    rotulo: "Auditoria",
-    Icone: ShieldCheck,
-    ativoEm: (p) => p.startsWith("/admin/auditoria"),
-    papeis: ["ADMIN", "GESTOR", "AUDITOR"],
+    href: "/admin/mapa",
+    rotulo: "Mapa",
+    Icone: Building2,
+    ativoEm: (p) => p.startsWith("/admin/mapa") || p.startsWith("/admin/busca"),
+    papeis: TODOS,
   },
 ];
 

@@ -7,6 +7,7 @@ import { exigirPermissao, pode } from "@/lib/permissoes";
 import PageHeader from "@/components/ui/PageHeader";
 import NovoAtivoForm from "./NovoAtivoForm";
 import AtivosGrid, { type AtivoLista } from "./AtivosGrid";
+import AtivosTable from "./AtivosTable";
 
 export const metadata: Metadata = {
   title: "Ativos · SGA-M",
@@ -151,7 +152,7 @@ export default async function AdminAtivosPage({ searchParams }: Props) {
           </Link>
         </div>
       </form>
-      <AtivosGrid ativos={ativos} siteUrl={siteUrl} orgNome={ctx.orgNome} />
+        <AtivosTable ativos={ativos} siteUrl={siteUrl} />
     </div>
   );
 }
