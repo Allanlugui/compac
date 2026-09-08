@@ -14,6 +14,7 @@ const ROTULO_TIPO: Record<ResultadoBusca["tipo"], string> = {
   fornecedor: "Fornec.",
   solicitacao: "Solicit.",
   pedidocompra: "Pedido C.",
+  localidade: "Local",
 };
 
 /** Busca global: botão + diálogo (Ctrl+K no desktop, toque no mobile). */
