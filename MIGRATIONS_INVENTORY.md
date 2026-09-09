@@ -1,8 +1,8 @@
-# SGA-M · INVENTÁRIO DE MIGRATIONS (v6 → v15)
+# SGA-M · INVENTÁRIO DE MIGRATIONS (v6 → v18)
 
-**Data:** 2026-09-07
-**Status:** Aguardando aplicação no Supabase real
-**Próximo passo:** Aplicar sequência validada abaixo
+**Data:** 2026-09-07 (atualizado FASE 8)
+**Status:** ✅ Aplicadas no Supabase homologação (`ialjfeltqpbgrxtymfwa.supabase.co`) — verificado `solicitacoes_compra.chamado_id` exists, `solicitacoes_chamado_idx`, `trg_org_solic_chamado`, `chamados_ativo_fk RESTRICT`
+**Próximo passo:** Validar em produção com mesma sequência
 
 ---
 
@@ -19,7 +19,10 @@
 | v12 | GATE FASE 4: RPC estoque | movimentar_estoque_atomic (lock) | v1–v11 | Alto | Pendente |
 | v13 | Fix 42703 | enforce_same_org via jsonb (corrige trigger quebrado) | v1–v12 | Baixo | Pendente |
 | v14 | Triagem → O.S. atômico | CHECK constraint expandido + RPC criar_os_a_partir_de_triagem | v1–v13 | Médio | Pendente |
-| v15 | Testes de RLS | RPC exec_as_user (test-only) | v1–v14 | Baixo | Pendente |
+| v15 | Testes de RLS | RPC exec_as_user (test-only) | v1–v14 | Baixo | ✅ Aplicada |
+| v16 | FASE 7 H1/H2 | Hardening RLS + índices | v1–v15 | Médio | ✅ Aplicada |
+| v17 | FASE 7 H4 | Hardening adicional | v1–v16 | Médio | ✅ Aplicada |
+| v18 | FASE 7.1 H1+H2 | `solicitacoes_compra.chamado_id` + `enforce_same_org` + `chamados.ativo_id RESTRICT` | v1–v17 | Médio | ✅ Aplicada |
 
 ---
 

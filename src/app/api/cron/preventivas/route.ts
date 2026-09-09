@@ -1,7 +1,39 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 
-export async function GET() {
-  const supabase = await createClient();
+export async function GET(request: Request) {
+  // Valida CRON_SECRET quando configurado (Vercel Cron envia Authorization: Bearer <CRON_SECRET>)
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret) {
+    const auth = request.headers.get("authorization");
+    if (auth !== `Bearer ${cronSecret}`) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
+  // Cron não tem sessão de usuário — usar service_role para bypass RLS controlado
+  // Se houver sessão (chamada manual autenticada), usa server client; senão service
+  let supabase: Awaited<ReturnType<typeof createServerClient>> | ReturnType<typeof createServiceClient>;
+  try {
+    const server = await createServerClient();
+    const { data: { user } } = await server.auth.getUser();
+    if (user) {
+      supabase = server;
+    } else {
+      supabase = createServiceClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } },
+      );
+    }
+  } catch {
+    supabase = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+  }
+
   const hoje = new Date().toISOString().slice(0, 10);
 
   const { data: planos } = await supabase

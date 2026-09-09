@@ -1,7 +1,7 @@
 # SGA-M — PROJECT STATUS
 
-**Data:** 2026-09-07
-**Branch:** `master` (`2dbb7c6` → `bc0e43b` + BLOCO D/E + FASE FINAL)
+**Data:** 2026-09-07 (FASE 8)
+**Branch:** `master` (`0238929` + FASE 7/7.1/7.2 + FASE 8 cron fix)
 
 ---
 
@@ -37,15 +37,16 @@
 - `tests/busca.test.ts` (8), `tests/notificacoes.test.ts` (8) — total 102 (51+19+16+16)
 
 ## FASE FINAL ✅ CONCLUÍDA
-- **Auditoria:** 34 rotas, 18 actions, 36 tabelas com RLS, 8 `service_role` usos (QR público + Storage/Admin)
-- **Correções mínimas:**
-  - `fix_rls_permissive.sql` (drop `sga_acesso_total_*` permissive `true`)
-  - `fix_ativos_cols.sql` (add `tipo, marca, qr_hash, qr_code, horimetro` em `ativos`)
-  - `vitest.config.ts` (`fileParallelism: false` para `auth.users` eventual consistency)
-  - `tests/setup.ts` (JWT com `iss` + `ref`, `uniqueEmail` com `randomUUID`, retry com delay)
-- **Documentação:** `ARCHITECTURE.md`, `DATA_MODEL.md`, `MODULES.md`, `SECURITY.md`, `OPERATIONS.md`, `QA_FINAL.md`, `PROJECT_STATUS.md` (este)
-- **Quality gates:** `lint 0`, `tsc 0`, `build 0`, `102/102` tests PASS
-- **Segurança:** `requireOrg` em 23/23 pages `/admin/*`, `organization_id` nunca do cliente, RLS `eh_membro` + `tem_papel`, `service_role` escopo mínimo, `storage` `o/{orgId}/...` server-side
+- **Auditoria:** 37 rotas (35 page + 2 route), 15 actions, 36 tabelas com RLS, 75 policies, service_role escopo mínimo
+- **Correções mínimas FASE 8:**
+  - `fix_rls_permissive.sql` (drop `sga_acesso_total_*`)
+  - `vercel.json` cron `0 6 * * *` + `src/app/api/cron/preventivas/route.ts` fix service_role fallback + CRON_SECRET
+  - `schema_v18.sql` `chamado_id` + `enforce_same_org` + RESTRICT
+  - `RELEASE_NOTES.md` v1.0.0 + `MIGRATIONS_INVENTORY.md` v16-18
+  - `vitest.config.ts` `fileParallelism: false` + `tests/setup.ts` JWT correto
+  - `tests/workflows.test.ts` 5 E2E + `tests/encoding.test.ts` 4
+- **Quality gates:** `lint 0`, `tsc 0`, `build 0`, `127/127` tests PASS
+- **Segurança:** `requireOrg` em 26/26 `/admin/*` pages (via layout), RLS `eh_membro` + `tem_papel`, `enforce_same_org` em 14 tabelas, cron service_role, storage `o/{orgId}/...`
 
 ---
 
@@ -88,15 +89,19 @@
 ## Testes
 
 ```
-51 Analytics (src/lib/analytics/calculations)
-19 RLS (cross-tenant, roles, RPC)
-16 Mapa (hierarquia, filtros, busca, sem localização, drill-down, cross-tenant)
-16 Busca/Notificações (busca 8, notificações 8)
+51 Analytics
+19 RLS isolation
+16 Mapa
+8 Busca
+8 Notificações
+12 Hardening H1-H4
+5 Workflows E2E (FASE 8)
+4 Encoding
 ---
-102 Total
+127 Total (9 suítes)
 ```
 
-`vitest` com `fileParallelism: false`, `pool: forks`, `sequence concurrent: false`, `testTimeout: 30000`.
+`vitest` com `fileParallelism: false`, `pool: forks`, `sequence concurrent: false`, `testTimeout: 60000`.
 
 ---
 
@@ -111,10 +116,20 @@
 
 ---
 
+## FASE 8 ✅ HOMOLOGAÇÃO FINAL
+
+- **Snapshot:** `0238929`, Node 24.13, npm 11.6, Next 16.3.4, React 19.2.8, Supabase 2.115, `@supabase/ssr` 0.12.6
+- **Ambiente:** Vercel (vercel.json cron), Supabase homologação `ialjfeltqpbgrxtymfwa`, Auth + Storage `manutencao-midia`, RLS 36 tabelas, 75 policies
+- **Migration v18:** APLICADA (verificado `chamado_id`, FK, índice `solicitacoes_chamado_idx`, trigger `trg_org_solic_chamado`, `chamados_ativo_fk RESTRICT`)
+- **Cron:** `0 6 * * *` ativo (fix service_role fallback + CRON_SECRET check)
+- **Fluxo principal:** PASS (workflows.test.ts 5/5: E2E completo, parcial, duplicidade, cross-tenant, preventiva idempotente)
+- **Encoding:** PASS (0 mojibake, 4 testes, CSV BOM, dashboard fix 0238929)
+- **Pontas soltas:** 0 crítico/alto, 1 médio (storage public policies), 1 baixo (Card.tsx órfão)
+
 ## Próximos Passos Operacionais
 
-- Homologação com PO (fluxo completo: login → dashboard → ativos → QR → O.S. → estoque → relatórios → busca → notificações → mapa → auditoria)
-- Treinamento de usuários por role
-- Backup Supabase (PITR) + Storage (`o/{orgId}/...`)
-- Monitoramento Vercel + Supabase Reports + `EXPLAIN ANALYZE` para dashboard com 1k+ registros
-- Backlog futuro: `tem_papel` em `checklist_itens`/`notificacoes`, `CASCADE` → `RESTRICT` em `chamados.ativo_id`, `types.ts` sync, `xlsx` export, `full-text` search, `WebSocket` para notificações, `Vercel Cron` para `verificarSLA`/`verificarEstoqueCritico`
+- Homologação com PO (fluxo sem copiar IDs, todos links navegáveis)
+- Treinamento por role (ADMIN/GESTOR/TECNICO/COMPRAS/AUDITOR/SOLICITANTE)
+- Backup Supabase PITR + Storage
+- Monitoramento Vercel + Supabase `EXPLAIN ANALYZE` para 1k+
+- Backlog: storage `public:false` + remover `sga_midia_*` públicas, `checklist_itens`/`notificacoes` `tem_papel`, `xlsx`, `full-text`, `WebSocket`
