@@ -80,9 +80,9 @@
 ## Segurança
 
 - **Tenant:** `requireOrg` → `ctx.orgId` (JWT) + `eq organization_id` + `enforce_same_org` trigger + RLS `eh_membro`
-- **RLS:** 36 tabelas, policies por role, `audit_select` com `org is null OR eh_membro` (legados)
+- **RLS:** 36 tabelas, policies por role, `audit_select` `((org IS NOT NULL AND eh_membro) OR (org IS NULL AND tabela='sessao'))` — 11 sessao legítimo, 1 memberships anômalo não exposto
 - **Permissões:** 58 em `src/lib/permissoes.ts`, `exigirPermissao` em 15 actions, `pode` para UI
-- **Storage:** `manutencao-midia` privado, `o/{orgId}/...` server-side, `midia_org_*` policies
+- **Storage:** `manutencao-midia` **PRIVATE** (`public=false` verificado 2026-09-09), `o/{orgId}/...` server-side, 3 policies tenant-aware `midia_legado_leitura`, `midia_org_leitura`, `midia_org_escrita` (authenticated + foldername[2]=orgId + eh_membro), 4 públicas `sga_midia_*` removidas via `scripts/hardening_storage_audit.sql`
 
 ---
 
@@ -97,8 +97,9 @@
 12 Hardening H1-H4
 5 Workflows E2E (FASE 8)
 4 Encoding
+8 Hardening Storage/Auditoria (GATE FINAL)
 ---
-135 Total (9 suítes)
+135 Total (10 suítes) — 135/135 PASS
 ```
 
 `vitest` com `fileParallelism: false`, `pool: forks`, `sequence concurrent: false`, `testTimeout: 60000`.
@@ -116,15 +117,16 @@
 
 ---
 
-## FASE 8 ✅ HOMOLOGAÇÃO FINAL
+## FASE 8 ✅ HOMOLOGAÇÃO FINAL + HARDENING
 
-- **Snapshot:** `0238929`, Node 24.13, npm 11.6, Next 16.3.4, React 19.2.8, Supabase 2.115, `@supabase/ssr` 0.12.6
-- **Ambiente:** Vercel (vercel.json cron), Supabase homologação `ialjfeltqpbgrxtymfwa`, Auth + Storage `manutencao-midia`, RLS 36 tabelas, 75 policies
+- **Snapshot:** `dcbb45e`, Node 24.13, npm 11.6, Next 16.3.4, React 19.2.8, Supabase 2.115, `@supabase/ssr` 0.12.6
+- **Ambiente:** Vercel (vercel.json cron), Supabase homologação `ialjfeltqpbgrxtymfwa` (verificado 2026-09-09), Auth + Storage `manutencao-midia` PRIVATE, RLS 36 tabelas, 75 policies → 3 storage tenant-aware
 - **Migration v18:** APLICADA (verificado `chamado_id`, FK, índice `solicitacoes_chamado_idx`, trigger `trg_org_solic_chamado`, `chamados_ativo_fk RESTRICT`)
 - **Cron:** `0 6 * * *` ativo (fix service_role fallback + CRON_SECRET check)
 - **Fluxo principal:** PASS (workflows.test.ts 5/5: E2E completo, parcial, duplicidade, cross-tenant, preventiva idempotente)
 - **Encoding:** PASS (0 mojibake, 4 testes, CSV BOM, dashboard fix 0238929)
-- **Pontas soltas:** 0 crítico/alto, 1 médio (storage public policies), 1 baixo (Card.tsx órfão)
+- **Hardening:** PASS (bucket PRIVATE, 3 policies midia_*, cross-tenant list/delete/upload bloqueado, signed URL 3600s isolada, auditoria 11 sessao +1 anômalo, 135/135)
+- **Pontas soltas:** 0 crítico/alto/médio, 1 baixo (Card.tsx órfão aceitável)
 
 ## Próximos Passos Operacionais
 
