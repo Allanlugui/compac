@@ -122,7 +122,7 @@
 
 ---
 
-## 12. Auditoria
+## 12. Auditoria (Hardening Final)
 
 - **Mecanismo:** `registrarLog(supabase, { tabela, registro_id, acao, dados_anteriores/novos, executado_por, organization_id, user_id })` em todas as mutaÃ§Ãµes crÃ­ticas (`ativos`, `chamados`, `estoque`, `compras`, `solicitacoes`, `notificacoes`).
 - **AÃ§Ãµes:** 33 canÃ´nicas (`INSERT`...`RECEIPT_REJECTED`), `auditoria_logs_acao_check` com lista completa (v8/v10/v11/v14).
@@ -130,7 +130,7 @@
 
 ---
 
-## 13. LimitaÃ§Ãµes Conhecidas (nÃ£o bloqueadores)
+## 13. Limitações (após hardening)Ã§Ãµes Conhecidas (nÃ£o bloqueadores)
 
 - `solic_insert_publico` com `with check (true)` permite `anon` forjar `organization_id` (aceitÃ¡vel para QR pÃºblico, mas documentado).
 - `checklist_respostas` sem `organization_id` (depende de `execucao_id` filtrado).
@@ -170,6 +170,12 @@
 - Inventário: 14 NULL (3 memberships, 11 sessao), memberships recuperável via dados_novos.
 - Correção: schema_v17.sql migra memberships e endurece audit_select para (org not null and eh_membro) OR (org is null and tabela='sessao').
 - Teste: H4 — 3/3 PASS (A visível para A, NULL não vaza, cross-tenant bloqueado).
+
+### H6 — Storage privado (2026-09-09)
+- Problema: bucket public=true + 4 policies sga_midia_* (anon+authenticated, qual bucket_id only) permitiam cross-tenant list (B listava o/A/), upload (B upload em o/A/), delete (B deletava o/A/).
+- Correção: storage.updateBucket(public=false) + DROP POLICY sga_midia_leitura_publica/upload/atualizacao/exclusao (scripts/hardening_storage_audit.sql). Após: 3 policies (midia_legado_leitura, midia_org_leitura, midia_org_escrita) todas authenticated + eh_membro + foldername[2]=orgId.
+- Teste: hardening-storage-audit.test.ts 8/8 PASS (bucket PRIVATE, 3 policies, cross-tenant list/delete/upload bloqueado, signed URL 3600s, auditoria 11+1 NULL, audit_select).
+- Signed URL: resolverFoto createSignedUrl(path,3600) + orgIdEsperado validado.
 
 ### H5 — Cross-tenant
 - Teste: QR A + org B = FAIL — 1/1 PASS (12/12 hardening total).

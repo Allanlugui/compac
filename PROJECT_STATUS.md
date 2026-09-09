@@ -45,7 +45,7 @@
   - `RELEASE_NOTES.md` v1.0.0 + `MIGRATIONS_INVENTORY.md` v16-18
   - `vitest.config.ts` `fileParallelism: false` + `tests/setup.ts` JWT correto
   - `tests/workflows.test.ts` 5 E2E + `tests/encoding.test.ts` 4
-- **Quality gates:** `lint 0`, `tsc 0`, `build 0`, `127/127` tests PASS
+- **Quality gates:** `lint 0`, `tsc 0`, `build 0`, `135/135` tests PASS
 - **Segurança:** `requireOrg` em 26/26 `/admin/*` pages (via layout), RLS `eh_membro` + `tem_papel`, `enforce_same_org` em 14 tabelas, cron service_role, storage `o/{orgId}/...`
 
 ---
@@ -98,7 +98,7 @@
 5 Workflows E2E (FASE 8)
 4 Encoding
 ---
-127 Total (9 suítes)
+135 Total (9 suítes)
 ```
 
 `vitest` com `fileParallelism: false`, `pool: forks`, `sequence concurrent: false`, `testTimeout: 60000`.

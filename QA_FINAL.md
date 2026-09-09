@@ -1,7 +1,7 @@
 # SGA-M — QA FINAL
 
 **Data:** 2026-09-07
-**Baseline:** 127 testes (51 analytics + 19 RLS + 16 mapa + 8 busca + 8 notificações + 12 hardening + 5 workflows + 4 encoding)
+**Baseline:** 135 testes (127 + 8 hardening-storage-audit) (51 analytics + 19 RLS + 16 mapa + 8 busca + 8 notificações + 12 hardening + 5 workflows + 4 encoding)
 
 ---
 
@@ -17,7 +17,7 @@
 | Hardening (H1-H4) | `tests/hardening.test.ts` | 12 | ✅ PASS |
 | Workflows E2E | `tests/workflows.test.ts` | 5 | ✅ PASS (58s) |
 | Encoding | `tests/encoding.test.ts` | 4 | ✅ PASS |
-| **Total** | 9 arquivos | **127** | **127 PASS** |
+| **Total** | 10 arquivos | **135** | **135 PASS** |
 
 **Comando:** `npx vitest run` com `fileParallelism: false`, `pool: forks`, `sequence concurrent: false`, `testTimeout: 60000`, `hookTimeout: 30000`.
 
@@ -84,7 +84,21 @@ ATIVO → QR → CHAMADO → TRIAGEM → O.S. → SOLICITAÇÃO (chamado_id) →
 
 ---
 
-## 6. Limitações e Pendências Aceitáveis
+## 6. Hardening Final (2026-09-09)
+
+| Área | Antes | Depois | Teste |
+|---|---|---|---|
+| Storage bucket | public=true | public=false (storage.updateBucket) | hardening-storage-audit: bucket PRIVATE |
+| Storage policies | 7 (4 públicas sga_midia_*) | 3 (midia_* tenant-aware) | hardening-storage-audit: 3 policies |
+| Storage cross-tenant list | B listava o/A/ (vazou) | B lista [] bloqueado | hardening-storage-audit: B não lista |
+| Storage cross-tenant delete | B deletava o/A/ (vazou) | B não deleta (stillExists 1) | hardening-storage-audit: B não deleta |
+| Storage cross-tenant upload | B upload em o/A/ (vazou) | B upload bloqueado (error) | hardening-storage-audit: B não upload |
+| Auditoria NULL | 12 (11 sessao +1 memberships) | 11 sessao legítimo +1 anômalo não exposto | hardening-storage-audit: 11+1 |
+| Auditoria cross-tenant | A via B? | A não vê B (0) | hardening-storage-audit: A não vê B |
+
+---
+
+## 7. Limitações e Pendências Aceitáveis
 
 | Limitação | Severidade | Justificativa |
 |---|---|---|
@@ -99,7 +113,7 @@ ATIVO → QR → CHAMADO → TRIAGEM → O.S. → SOLICITAÇÃO (chamado_id) →
 
 ---
 
-## 7. Decisões
+## 8. Decisões
 
 | Decisão | Motivo |
 |---|---|
@@ -113,7 +127,7 @@ ATIVO → QR → CHAMADO → TRIAGEM → O.S. → SOLICITAÇÃO (chamado_id) →
 
 ---
 
-## 8. Pontas Soltas
+## 9. Pontas Soltas
 
 | Item | Local | Classificação |
 |---|---|---|
@@ -126,7 +140,7 @@ ATIVO → QR → CHAMADO → TRIAGEM → O.S. → SOLICITAÇÃO (chamado_id) →
 
 ---
 
-## 9. Status Final
+## 10. Status Final
 
 ```
 BLOCO A ✅  (51 analytics)
