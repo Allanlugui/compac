@@ -1,7 +1,7 @@
 # SGA-M — OPERATIONS
 
-**Versão:** FASE FINAL
-**Data:** 2026-09-07
+**Versão:** PRODUÇÃO (2026-09-09)
+**Data:** 2026-09-09
 
 ---
 
