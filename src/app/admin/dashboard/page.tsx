@@ -246,9 +246,9 @@ export default async function DashboardPage({
         )}
       </section>
 
-      {/* N2 — EficiÃªncia */}
+      {/* N2 — Eficiência */}
       <section className="space-y-3">
-        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N2 — EficiÃªncia operacional</h2>
+        <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N2 — Eficiência operacional</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Card titulo="O.S. abertas" valor={osAbertas} href="/admin/chamados?os_status=aberta" sub={`Backlog O.S.: ${backlogOS} · Demanda: ${backlogDemanda}`} />
           <Card titulo="Backlog" valor={`${backlogOS}`} sub={`Demanda: ${backlogDemanda} · Atrasado depende de prazo`} />
@@ -296,14 +296,14 @@ export default async function DashboardPage({
         <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">N3 — Recursos e demanda</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Card titulo="Estoque — disponível" valor={estoque.disponivel} href="/admin/estoque" sub={`Críticos: ${estoque.criticos} · Abaixo reposição: ${estoque.abaixoReposicao}`} />
-          <Card titulo="Estoque — valor físico" valor={formatarMoeda(estoque.valorFisico)} sub={`${estoque.total} produtos · físico Ã— custo_médio`} />
+          <Card titulo="Estoque — valor físico" valor={formatarMoeda(estoque.valorFisico)} sub={`${estoque.total} produtos · físico × custo_médio`} />
           <Card titulo="Solicitações pendentes" valor={solicitacoes} href="/admin/compras/solicitacoes" sub="rascunho/enviada/em_analise/em_cotacao" />
           <Card titulo="Consumo por produto" valor={`${consumo.porQuantidade.length} produtos`} sub="Top consumo no período" />
         </div>
         <div className="grid gap-3 lg:grid-cols-3">
           <BarList titulo="Top ativos por O.S. (Top 10)" itens={topOS} hrefBase="/admin/chamados" />
           <BarList titulo="Top ativos por custo (Top 10)" itens={topCusto.map(([id, v]) => [id, Math.round(v)] as [string, number])} hrefBase="/admin/chamados" />
-          <BarList titulo="Top ativos por reincidÃªncia (Top 10)" itens={topReinc} hrefBase="/admin/chamados" />
+          <BarList titulo="Top ativos por reincidência (Top 10)" itens={topReinc} hrefBase="/admin/chamados" />
         </div>
         {consumo.porQuantidade.length > 0 && (
           <div className="grid gap-3 lg:grid-cols-2">
