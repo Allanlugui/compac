@@ -40,6 +40,16 @@ create index if not exists part_user_idx on public.conversa_participantes(user_i
 create index if not exists msg_conv_idx on public.mensagens(conversa_id, created_at);
 create index if not exists pares_hash_idx on public.conversa_pares(par_hash);
 
+-- Helper para evitar recursão RLS em conversa_participantes (SECURITY DEFINER)
+create or replace function public.is_conversa_participant(p_conversa_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from public.conversa_participantes where conversa_id = p_conversa_id and user_id = auth.uid())
+$$;
+
 alter table public.conversas enable row level security;
 alter table public.conversa_participantes enable row level security;
 alter table public.conversa_pares enable row level security;
@@ -60,10 +70,10 @@ create policy conv_update on public.conversas for update using (
   eh_membro(organization_id) and exists (select 1 from public.conversa_participantes cp where cp.conversa_id = conversas.id and cp.user_id = auth.uid())
 );
 
--- participantes: SELECT só da própria conversa (participante daquela conversa)
+-- participantes: SELECT só da própria conversa (participante daquela conversa) — via helper SECURITY DEFINER para evitar recursão
 drop policy if exists part_select on public.conversa_participantes;
 create policy part_select on public.conversa_participantes for select using (
-  eh_membro(organization_id) and exists (select 1 from public.conversa_participantes me where me.conversa_id = conversa_participantes.conversa_id and me.user_id = auth.uid())
+  eh_membro(organization_id) and public.is_conversa_participant(conversa_id)
 );
 -- INSERT: mesma org, membership ativo, participante autorizado (app cria ambos em transação com advisory lock)
 drop policy if exists part_insert on public.conversa_participantes;
@@ -95,3 +105,51 @@ drop policy if exists msg_insert on public.mensagens;
 create policy msg_insert on public.mensagens for insert with check (
   eh_membro(organization_id) and exists (select 1 from public.conversa_participantes cp where cp.conversa_id = mensagens.conversa_id and cp.user_id = auth.uid())
 );
+
+-- RPC transacional para 1:1 (advisory lock + pair unique)
+create or replace function public.criar_ou_obter_conversa(p_destinatario membership_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_my record;
+  v_dest record;
+  v_pair_hash text;
+  v_conv_id uuid;
+begin
+  select * into v_my from public.memberships where user_id = auth.uid() and status='ativo' limit 1;
+  if not found then raise exception 'Membership não encontrada'; end if;
+  select * into v_dest from public.memberships where id = p_destinatario and status='ativo';
+  if not found then raise exception 'Destinatário inválido'; end if;
+  if v_my.organization_id != v_dest.organization_id then raise exception 'Cross-tenant bloqueado'; end if;
+  if v_my.id = v_dest.id then raise exception 'Self conversation bloqueada'; end if;
+  v_pair_hash := array_to_string(array(select unnest(array[v_my.id::text, v_dest.id::text]) order by 1), '|');
+  -- advisory lock por par
+  perform pg_advisory_xact_lock(hashtext(v_pair_hash));
+  select conversa_id into v_conv_id from public.conversa_pares where organization_id = v_my.organization_id and par_hash = v_pair_hash;
+  if found then return v_conv_id; end if;
+  v_conv_id := gen_random_uuid();
+  insert into public.conversas(id, organization_id) values (v_conv_id, v_my.organization_id);
+  insert into public.conversa_pares(conversa_id, organization_id, par_hash) values (v_conv_id, v_my.organization_id, v_pair_hash);
+  insert into public.conversa_participantes(conversa_id, user_id, organization_id, membership_id) values
+    (v_conv_id, v_my.user_id, v_my.organization_id, v_my.id),
+    (v_conv_id, v_dest.user_id, v_dest.organization_id, v_dest.id);
+  return v_conv_id;
+end;
+$$;
+
+-- RPC para last_read_at só próprio
+create or replace function public.marcar_conversa_lida(p_conversa_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_my record;
+begin
+  select * into v_my from public.memberships where user_id = auth.uid() and status='ativo' limit 1;
+  update public.conversa_participantes set last_read_at = now() where conversa_id = p_conversa_id and user_id = auth.uid();
+end;
+$$;
