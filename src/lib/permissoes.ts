@@ -15,6 +15,7 @@ import type { Role } from "./types";
 export const PERMISSOES = {
   "usuarios.administrar": ["ADMIN"],
   "auditoria.ver": ["ADMIN", "GESTOR", "AUDITOR"],
+  "estrutura.ver": ["ADMIN", "GESTOR", "TECNICO", "COMPRAS", "AUDITOR", "SOLICITANTE"],
   "estrutura.escrever": ["ADMIN", "GESTOR"],
   "ativos.ver": ["ADMIN", "GESTOR", "TECNICO"],
   "ativos.criar": ["ADMIN", "GESTOR"],
@@ -27,7 +28,7 @@ export const PERMISSOES = {
   "chamados.editar": ["ADMIN", "GESTOR"],
   "chamados.triagem": ["ADMIN", "GESTOR"],
   "os.ver": ["ADMIN", "GESTOR", "TECNICO", "AUDITOR"],
-  "os.criar": ["ADMIN", "GESTOR"],
+  "os.criar": ["ADMIN", "GESTOR", "TECNICO"],
   "os.planejar": ["ADMIN", "GESTOR"],
   "os.executar": ["ADMIN", "GESTOR", "TECNICO"],
   "os.concluir": ["ADMIN", "GESTOR"],
@@ -55,6 +56,11 @@ export const PERMISSOES = {
   "solicitacoes.criar": ["ADMIN", "GESTOR", "COMPRAS", "TECNICO", "SOLICITANTE"],
   "solicitacoes.aprovar": ["ADMIN", "GESTOR"],
   "checklists.escrever": ["ADMIN", "GESTOR", "TECNICO"],
+  "relatorios.ver": ["ADMIN", "GESTOR", "COMPRAS", "AUDITOR"],
+  "calendario.ver": ["ADMIN", "GESTOR", "TECNICO"],
+  "mapa.ver": ["ADMIN", "GESTOR", "TECNICO", "COMPRAS", "AUDITOR"],
+  "monitoramento.ver": ["ADMIN", "GESTOR", "AUDITOR"],
+  "organograma.ver": ["ADMIN", "GESTOR", "TECNICO", "COMPRAS", "AUDITOR", "SOLICITANTE"],
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Permissao = keyof typeof PERMISSOES;

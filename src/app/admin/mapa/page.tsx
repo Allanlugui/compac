@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
+import { exigirPermissao } from "@/lib/permissoes";
 import { requireOrg } from "@/lib/org";
 import PageHeader from "@/components/ui/PageHeader";
 import MapaClient from "./MapaClient";
@@ -10,6 +11,7 @@ export const metadata: Metadata = { title: "Mapa Operacional · SGA-M" };
 export default async function MapaPage() {
   const supabase = await createClient();
   const ctx = await requireOrg();
+  exigirPermissao(ctx, "mapa.ver");
 
   const [{ data: locs }, { data: ativos }, { data: chamados }, { data: cats }] = await Promise.all([
     supabase

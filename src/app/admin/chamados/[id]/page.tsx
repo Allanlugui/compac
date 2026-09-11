@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { pode } from "@/lib/permissoes";
+import { exigirPermissao, pode } from "@/lib/permissoes";
 import { resolverFoto } from "@/lib/storage";
 import type {
   ChamadoComAtivo,
@@ -90,6 +90,7 @@ export default async function ChamadoPage({ params }: ChamadoPageProps) {
   const { id } = await params;
   const supabase = await createClient();
   const ctx = await requireOrg();
+  exigirPermissao(ctx, "chamados.ver");
 
   const podeTriagem = pode(ctx, "chamados.triagem");
   const podeExecutar = pode(ctx, "os.executar");

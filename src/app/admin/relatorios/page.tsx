@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { exigirPermissao } from "@/lib/permissoes";
 import { requireOrg } from "@/lib/org";
 import { formatarData, formatarMoeda, formatarDuracaoMedia } from "@/lib/format";
 import type { PeriodoId } from "@/lib/analytics/types";
@@ -90,6 +91,7 @@ export default async function RelatoriosPage({
 
   const supabase = await createClient();
   const ctx = await requireOrg();
+  exigirPermissao(ctx, "relatorios.ver");
   const qctx = { supabase, orgId: ctx.orgId, periodo };
 
   const [

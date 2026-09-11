@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { exigirPermissao } from "@/lib/permissoes";
 import { requireOrg } from "@/lib/org";
 import { buscarGlobal, type ResultadoBusca } from "@/app/admin/_actions/busca";
 import PageHeader from "@/components/ui/PageHeader";
@@ -21,6 +22,7 @@ export default async function BuscaPage({ searchParams }: { searchParams: Promis
   const { q } = await searchParams;
   const termo = (q ?? "").trim().slice(0, 60);
   const ctx = await requireOrg();
+  exigirPermissao(ctx, "chamados.ver");
   let resultados: ResultadoBusca[] = [];
   if (termo.length >= 2) {
     resultados = await buscarGlobal(termo);

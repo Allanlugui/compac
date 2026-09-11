@@ -27,16 +27,25 @@ export async function buscarGlobal(termo: string): Promise<ResultadoBusca[]> {
   const ctx = await requireOrg();
   const supabase = await createClient();
   const like = `%${t}%`;
+  // Record scope: SOLICITANTE só busca próprios chamados/solicitações
+  const isSolicitante = ctx.role === "SOLICITANTE";
 
+  const empty = { data: [] as unknown[], error: null } as const;
   const [ativos, chamados, compras, pedidos, produtos, fornecedores, sols, peds, locs] = await Promise.all([
     supabase.from("ativos").select("id, nome, codigo, localizacao, patrimonio, tag").eq("organization_id", ctx.orgId).or(`nome.ilike.${like},codigo.ilike.${like},patrimonio.ilike.${like},tag.ilike.${like},localizacao.ilike.${like}`).limit(10),
-    supabase.from("chamados").select("id, solicitante, descricao, status").eq("organization_id", ctx.orgId).or(`solicitante.ilike.${like},descricao.ilike.${like},status.ilike.${like}`).limit(10),
-    supabase.from("compras").select("id, item, setor").eq("organization_id", ctx.orgId).or(`item.ilike.${like},setor.ilike.${like}`).limit(5),
-    supabase.from("solicitacoes_compra").select("id, item, setor, status").eq("organization_id", ctx.orgId).or(`item.ilike.${like},setor.ilike.${like}`).limit(5),
-    supabase.from("produtos").select("id, codigo, descricao, categoria").eq("organization_id", ctx.orgId).or(`codigo.ilike.${like},descricao.ilike.${like},categoria.ilike.${like}`).limit(10),
-    supabase.from("fornecedores").select("id, nome, cnpj, contato").eq("organization_id", ctx.orgId).or(`nome.ilike.${like},cnpj.ilike.${like},contato.ilike.${like}`).limit(10),
-    supabase.from("solicitacoes_compra").select("id, item, status").eq("organization_id", ctx.orgId).or(`item.ilike.${like}`).limit(3),
-    supabase.from("pedidos_compra").select("id, numero").eq("organization_id", ctx.orgId).or(`numero.ilike.${like}`).limit(3),
+    isSolicitante
+      ? supabase.from("chamados").select("id, solicitante, descricao, status").eq("organization_id", ctx.orgId).eq("solicitante", ctx.email).or(`solicitante.ilike.${like},descricao.ilike.${like}`).limit(10)
+      : supabase.from("chamados").select("id, solicitante, descricao, status").eq("organization_id", ctx.orgId).or(`solicitante.ilike.${like},descricao.ilike.${like},status.ilike.${like}`).limit(10),
+    isSolicitante ? Promise.resolve(empty) : supabase.from("compras").select("id, item, setor").eq("organization_id", ctx.orgId).or(`item.ilike.${like},setor.ilike.${like}`).limit(5),
+    isSolicitante
+      ? supabase.from("solicitacoes_compra").select("id, item, setor, status").eq("organization_id", ctx.orgId).eq("solicitante", ctx.email).or(`item.ilike.${like},setor.ilike.${like}`).limit(5)
+      : supabase.from("solicitacoes_compra").select("id, item, setor, status").eq("organization_id", ctx.orgId).or(`item.ilike.${like},setor.ilike.${like}`).limit(5),
+    isSolicitante ? Promise.resolve(empty) : supabase.from("produtos").select("id, codigo, descricao, categoria").eq("organization_id", ctx.orgId).or(`codigo.ilike.${like},descricao.ilike.${like},categoria.ilike.${like}`).limit(10),
+    isSolicitante ? Promise.resolve(empty) : supabase.from("fornecedores").select("id, nome, cnpj, contato").eq("organization_id", ctx.orgId).or(`nome.ilike.${like},cnpj.ilike.${like},contato.ilike.${like}`).limit(10),
+    isSolicitante
+      ? supabase.from("solicitacoes_compra").select("id, item, status").eq("organization_id", ctx.orgId).eq("solicitante", ctx.email).or(`item.ilike.${like}`).limit(3)
+      : supabase.from("solicitacoes_compra").select("id, item, status").eq("organization_id", ctx.orgId).or(`item.ilike.${like}`).limit(3),
+    isSolicitante ? Promise.resolve(empty) : supabase.from("pedidos_compra").select("id, numero").eq("organization_id", ctx.orgId).or(`numero.ilike.${like}`).limit(3),
     supabase.from("localidades").select("id, nome, tipo").eq("organization_id", ctx.orgId).or(`nome.ilike.${like},tipo.ilike.${like}`).limit(10),
   ]);
 

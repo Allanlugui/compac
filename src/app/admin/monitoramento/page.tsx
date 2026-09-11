@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { exigirPermissao } from "@/lib/permissoes";
 import { requireOrg } from "@/lib/org";
 import PageHeader from "@/components/ui/PageHeader";
 
@@ -22,6 +23,7 @@ async function checkStorage() {
 
 export default async function MonitoramentoPage() {
   const ctx = await requireOrg();
+  exigirPermissao(ctx, "monitoramento.ver");
   const [db, storage, auth] = await Promise.all([
     checkDb(),
     checkStorage(),

@@ -10,17 +10,16 @@ import EstruturaManager from "./EstruturaManager";
 export const metadata: Metadata = { title: "Estrutura · SGA-M" };
 
 export default async function EstruturaPage() {
-  let ctx: Awaited<ReturnType<typeof requireOrg>> | null = null;
+  const ctx = await requireOrg();
   try {
-    ctx = await requireOrg();
-    exigirPermissao(ctx, "estrutura.escrever");
+    exigirPermissao(ctx, "estrutura.ver");
   } catch {
     return (
       <div className="space-y-6">
         <PageHeader titulo="Estrutura" descricao="Localidades e categorias da organização." />
         <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
           <ShieldX className="mx-auto size-10 text-zinc-300" />
-          <p className="mt-2 font-bold">Área restrita a ADMIN e GESTOR</p>
+          <p className="mt-2 font-bold">Área restrita</p>
         </div>
       </div>
     );
