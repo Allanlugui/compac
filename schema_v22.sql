@@ -61,7 +61,8 @@ create policy conv_select on public.conversas for select using (
   eh_membro(organization_id) and exists (select 1 from public.conversa_participantes cp where cp.conversa_id = conversas.id and cp.user_id = auth.uid())
 );
 drop policy if exists conv_insert on public.conversas;
-create policy conv_insert on public.conversas for insert with check (eh_membro(organization_id));
+-- Só via RPC criar_ou_obter_conversa (SECURITY DEFINER), direto bloqueado para authenticated
+create policy conv_insert on public.conversas for insert with check (false);
 -- UPDATE updated_at: só participante
 drop policy if exists conv_update on public.conversas;
 create policy conv_update on public.conversas for update using (
@@ -75,11 +76,9 @@ drop policy if exists part_select on public.conversa_participantes;
 create policy part_select on public.conversa_participantes for select using (
   eh_membro(organization_id) and public.is_conversa_participant(conversa_id)
 );
--- INSERT: mesma org, membership ativo, participante autorizado (app cria ambos em transação com advisory lock)
+-- INSERT: só via RPC (SECURITY DEFINER), direto bloqueado
 drop policy if exists part_insert on public.conversa_participantes;
-create policy part_insert on public.conversa_participantes for insert with check (
-  eh_membro(organization_id) and exists (select 1 from public.memberships m where m.id = membership_id and m.organization_id = conversa_participantes.organization_id and m.status='ativo')
-);
+create policy part_insert on public.conversa_participantes for insert with check (false);
 -- UPDATE last_read_at: só própria linha
 drop policy if exists part_update on public.conversa_participantes;
 create policy part_update on public.conversa_participantes for update using (
@@ -95,7 +94,7 @@ create policy pares_select on public.conversa_pares for select using (
   eh_membro(organization_id) and exists (select 1 from public.conversa_participantes cp where cp.conversa_id = conversa_pares.conversa_id and cp.user_id = auth.uid())
 );
 drop policy if exists pares_insert on public.conversa_pares;
-create policy pares_insert on public.conversa_pares for insert with check (eh_membro(organization_id));
+create policy pares_insert on public.conversa_pares for insert with check (false);
 
 drop policy if exists msg_select on public.mensagens;
 create policy msg_select on public.mensagens for select using (
@@ -106,8 +105,8 @@ create policy msg_insert on public.mensagens for insert with check (
   eh_membro(organization_id) and exists (select 1 from public.conversa_participantes cp where cp.conversa_id = mensagens.conversa_id and cp.user_id = auth.uid())
 );
 
--- RPC transacional para 1:1 (advisory lock + pair unique)
-create or replace function public.criar_ou_obter_conversa(p_destinatario membership_id uuid)
+-- RPC transacional para 1:1 (advisory lock + pair unique) — multi-tenant: p_organization_id validado
+create or replace function public.criar_ou_obter_conversa(p_destinatario uuid, p_organization_id uuid)
 returns uuid
 language plpgsql
 security definer
@@ -119,37 +118,41 @@ declare
   v_pair_hash text;
   v_conv_id uuid;
 begin
-  select * into v_my from public.memberships where user_id = auth.uid() and status='ativo' limit 1;
-  if not found then raise exception 'Membership não encontrada'; end if;
+  select * into v_my from public.memberships where user_id = auth.uid() and organization_id = p_organization_id and status='ativo';
+  if not found then raise exception 'Caller não é membro ativo da organização'; end if;
   select * into v_dest from public.memberships where id = p_destinatario and status='ativo';
   if not found then raise exception 'Destinatário inválido'; end if;
-  if v_my.organization_id != v_dest.organization_id then raise exception 'Cross-tenant bloqueado'; end if;
+  if v_dest.organization_id != p_organization_id then raise exception 'Cross-tenant bloqueado'; end if;
   if v_my.id = v_dest.id then raise exception 'Self conversation bloqueada'; end if;
   v_pair_hash := array_to_string(array(select unnest(array[v_my.id::text, v_dest.id::text]) order by 1), '|');
-  -- advisory lock por par
-  perform pg_advisory_xact_lock(hashtext(v_pair_hash));
-  select conversa_id into v_conv_id from public.conversa_pares where organization_id = v_my.organization_id and par_hash = v_pair_hash;
+  perform pg_advisory_xact_lock(hashtext(v_pair_hash || p_organization_id::text));
+  select conversa_id into v_conv_id from public.conversa_pares where organization_id = p_organization_id and par_hash = v_pair_hash;
   if found then return v_conv_id; end if;
   v_conv_id := gen_random_uuid();
-  insert into public.conversas(id, organization_id) values (v_conv_id, v_my.organization_id);
-  insert into public.conversa_pares(conversa_id, organization_id, par_hash) values (v_conv_id, v_my.organization_id, v_pair_hash);
+  insert into public.conversas(id, organization_id) values (v_conv_id, p_organization_id);
+  insert into public.conversa_pares(conversa_id, organization_id, par_hash) values (v_conv_id, p_organization_id, v_pair_hash);
   insert into public.conversa_participantes(conversa_id, user_id, organization_id, membership_id) values
-    (v_conv_id, v_my.user_id, v_my.organization_id, v_my.id),
-    (v_conv_id, v_dest.user_id, v_dest.organization_id, v_dest.id);
+    (v_conv_id, v_my.user_id, p_organization_id, v_my.id),
+    (v_conv_id, v_dest.user_id, p_organization_id, v_dest.id);
   return v_conv_id;
 end;
 $$;
+revoke all on function public.criar_ou_obter_conversa(uuid, uuid) from public;
+grant execute on function public.criar_ou_obter_conversa(uuid, uuid) to authenticated;
 
--- RPC para last_read_at só próprio
+-- RPC para last_read_at só próprio (com tenant check)
 create or replace function public.marcar_conversa_lida(p_conversa_id uuid)
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare v_my record;
 begin
-  select * into v_my from public.memberships where user_id = auth.uid() and status='ativo' limit 1;
   update public.conversa_participantes set last_read_at = now() where conversa_id = p_conversa_id and user_id = auth.uid();
+  if not found then raise exception 'Não participante ou conversa não encontrada'; end if;
 end;
 $$;
+revoke all on function public.marcar_conversa_lida(uuid) from public;
+grant execute on function public.marcar_conversa_lida(uuid) to authenticated;
+revoke all on function public.is_conversa_participant(uuid) from public;
+grant execute on function public.is_conversa_participant(uuid) to authenticated;

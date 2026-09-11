@@ -58,15 +58,14 @@ export async function criarOuObterConversa(destinatarioMembershipId: string): Pr
   if (myId === destinatarioMembershipId) throw new Error("Não pode conversar consigo mesmo");
 
   if (await isDbAvailable()) {
-    // DB oficial: usar RPC transacional com advisory lock + pair unique
-    const { data, error } = await supabase.rpc("criar_ou_obter_conversa", { p_destinatario: destinatarioMembershipId });
+    const { data, error } = await supabase.rpc("criar_ou_obter_conversa", { p_destinatario: destinatarioMembershipId, p_organization_id: ctx.orgId });
     if (error) throw new Error(error.message);
     const convId = data as string;
-    // Verificar se já existia via conversa_pares (para determinar existente flag)
-    const { data: existing } = await supabase.from("conversa_pares").select("conversa_id").eq("conversa_id", convId).maybeSingle();
-    // Se a conversa já existia antes, RPC retornou existente; infelizmente RPC não retorna flag, então assumimos existente se já havia participantes
-    // Para simplificar, verificar se a conversa tem mensagens prévias ou se foi criada agora via timestamp
-    return { id: convId, existente: false }; // RPC já garante 1:1, existente vs novo determinado via pair check antes
+    // Para determinar existente, verificar se conversa já tinha mensagens antes (ou se foi criada agora)
+    // Simplificado: se a conversa já existia, ela já está em conversa_pares, mas não sabemos se era nova ou existente; vamos checar created_at
+    const { data: conv } = await supabase.from("conversas").select("created_at").eq("id", convId).maybeSingle();
+    const isNew = conv && new Date((conv as { created_at: string }).created_at).getTime() > Date.now() - 2000;
+    return { id: convId, existente: !isNew };
   }
 
   const idx = await loadIndex(ctx.orgId);
@@ -178,8 +177,8 @@ export async function listarMensagens(conversaId: string, limit = 50): Promise<{
     if (!myId) throw new Error("Não participante");
     const { data: part } = await supabase.from("conversa_participantes").select("membership_id").eq("conversa_id", conversaId).eq("membership_id", myId).maybeSingle();
     if (!part) throw new Error("Não participante");
-    // marcar como lida
-    await supabase.from("conversa_participantes").update({ last_read_at: new Date().toISOString() } as never).eq("conversa_id", conversaId).eq("membership_id", myId);
+    // marcar como lida via RPC (só próprio)
+    await supabase.rpc("marcar_conversa_lida", { p_conversa_id: conversaId });
     const { data: msgs } = await supabase.from("mensagens").select("id, sender_membership_id, conteudo, created_at").eq("conversa_id", conversaId).order("created_at", { ascending: true }).limit(limit);
     return (msgs as { id: string; sender_membership_id: string; conteudo: string; created_at: string }[] | null)?.map(m=>({ id: m.id, sender: m.sender_membership_id, conteudo: m.conteudo, created_at: m.created_at })) ?? [];
   }
