@@ -13,9 +13,16 @@ async function isDbAvailable(): Promise<boolean> {
   try {
     const supabase = await createClient();
     const { error } = await supabase.from("conversas").select("id").limit(1);
-    if (error && String(error.message).includes("Could not find the table")) return false;
+    if (error) {
+      if (String(error.message).includes("Could not find the table")) return false;
+      // Não mascarar permission/network error como fallback quando schema deveria existir
+      throw error;
+    }
     return true;
-  } catch { return false; }
+  } catch (e) {
+    if (String((e as Error).message).includes("Could not find the table")) return false;
+    throw e;
+  }
 }
 async function loadIndex(orgId: string): Promise<Record<string, { participantes: string[]; created_at: string }>> {
   if (await isDbAvailable()) {
@@ -51,15 +58,32 @@ export async function criarOuObterConversa(destinatarioMembershipId: string): Pr
   if (myId === destinatarioMembershipId) throw new Error("Não pode conversar consigo mesmo");
 
   if (await isDbAvailable()) {
-    // DB oficial: procurar conversa existente com mesmos 2 participantes
+    const pair = [myId, destinatarioMembershipId].sort().join("|");
+    const pairHash = pair; // unique per org via conversa_pares
+    // Tentar encontrar existente via conversa_pares (1 query)
+    const { data: existing } = await supabase.from("conversa_pares").select("conversa_id").eq("organization_id", ctx.orgId).eq("par_hash", pairHash).maybeSingle();
+    if (existing) return { id: (existing as { conversa_id: string }).conversa_id, existente: true };
+    // Fallback: verificar via participantes (caso pares não preenchido)
     const { data: convs } = await supabase.from("conversas").select("id").eq("organization_id", ctx.orgId);
     for (const c of (convs ?? []) as { id: string }[]) {
       const { data: parts } = await supabase.from("conversa_participantes").select("membership_id").eq("conversa_id", c.id);
       const ids = (parts ?? []).map(p=>(p as { membership_id: string }).membership_id).sort();
-      if (ids.join("|") === [myId, destinatarioMembershipId].sort().join("|")) return { id: c.id, existente: true };
+      if (ids.join("|") === pair) return { id: c.id, existente: true };
     }
     const convId = crypto.randomUUID();
-    await supabase.from("conversas").insert({ id: convId, organization_id: ctx.orgId } as never);
+    // Transação com advisory lock implícito via unique constraint em conversa_pares
+    const { error: convErr } = await supabase.from("conversas").insert({ id: convId, organization_id: ctx.orgId } as never);
+    if (convErr) throw convErr;
+    const { error: paresErr } = await supabase.from("conversa_pares").insert({ conversa_id: convId, organization_id: ctx.orgId, par_hash: pairHash } as never);
+    if (paresErr) {
+      // Se duplicate (concorrência A→B + B→A), buscar existente
+      if (String(paresErr.message).includes("duplicate") || String(paresErr.code) === "23505") {
+        await supabase.from("conversas").delete().eq("id", convId);
+        const { data: dup } = await supabase.from("conversa_pares").select("conversa_id").eq("organization_id", ctx.orgId).eq("par_hash", pairHash).maybeSingle();
+        if (dup) return { id: (dup as { conversa_id: string }).conversa_id, existente: true };
+      }
+      throw paresErr;
+    }
     await supabase.from("conversa_participantes").insert([
       { conversa_id: convId, user_id: (myMem as { user_id: string }).user_id, organization_id: ctx.orgId, membership_id: myId } as never,
       { conversa_id: convId, user_id: (dest as { user_id: string }).user_id, organization_id: ctx.orgId, membership_id: destinatarioMembershipId } as never,
@@ -85,7 +109,7 @@ export async function criarOuObterConversa(destinatarioMembershipId: string): Pr
 export async function enviarMensagem(conversaId: string, conteudo: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await requireOrg();
   const supabase = await createClient();
-  const texto = conteudo.trim().slice(0, 2000);
+  const texto = conteudo.trim();
   if (texto.length < 1) return { ok: false, error: "Mensagem vazia" };
   if (texto.length > 2000) return { ok: false, error: "Máx 2000 caracteres" };
 
