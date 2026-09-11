@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Clock, FileText, SearchX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { pode } from "@/lib/permissoes";
+import { exigirPermissao, pode } from "@/lib/permissoes";
 import { resolverFoto } from "@/lib/storage";
 import type {
   Cotacao,
@@ -54,6 +54,7 @@ export default async function SolicitacaoPage({ params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
   const ctx = await requireOrg();
+  exigirPermissao(ctx, "solicitacoes.ver");
 
   const podeAprovar = pode(ctx, "solicitacoes.aprovar");
   const podeEditar = pode(ctx, "solicitacoes.criar");
@@ -88,6 +89,18 @@ export default async function SolicitacaoPage({ params }: Props) {
         <EmptyState Icone={SearchX} titulo="Não encontrada" descricao="Verifique o link ou a organização." />
       </div>
     );
+  }
+  // Record scope: SOLICITANTE só vê próprias
+  if (ctx.role === "SOLICITANTE") {
+    const isOwner = (sol as unknown as { created_by: string | null }).created_by === ctx.userId || sol.solicitante === ctx.email;
+    if (!isOwner) {
+      return (
+        <div className="space-y-6">
+          <PageHeader titulo="Solicitação" voltar={{ href: "/admin/compras/solicitacoes", rotulo: "Solicitações" }} />
+          <EmptyState Icone={SearchX} titulo="Sem acesso" descricao="Você só pode visualizar suas próprias solicitações." />
+        </div>
+      );
+    }
   }
 
   // O.S. vinculada (quando solicitação originada de O.S.)

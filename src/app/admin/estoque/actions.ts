@@ -314,6 +314,11 @@ export async function atualizarProduto(input: {
     if (error.code === "23505") return { ok: false, error: "SKU já existe." };
     return { ok: false, error: "Não foi possível salvar." };
   }
+  await registrarLog(supabase, {
+    tabela: "produtos", registro_id: input.id, acao: "UPDATE",
+    dados_anteriores: null, dados_novos: { descricao },
+    executado_por: ctx.email, organization_id: ctx.orgId, user_id: ctx.userId,
+  });
   revalidar();
   return { ok: true };
 }
@@ -355,6 +360,11 @@ export async function vincularFornecedor(input: {
     { onConflict: "produto_id,fornecedor_id" },
   );
   if (error) return { ok: false, error: "Não foi possível vincular." };
+  await registrarLog(supabase, {
+    tabela: "produto_fornecedores", registro_id: input.produtoId, acao: "UPDATE",
+    dados_anteriores: null, dados_novos: { fornecedor_id: input.fornecedorId, principal: input.principal },
+    executado_por: ctx.email, organization_id: ctx.orgId, user_id: ctx.userId,
+  });
   revalidar();
   return { ok: true };
 }
@@ -375,6 +385,11 @@ export async function desvincularFornecedor(input: {
     .eq("fornecedor_id", input.fornecedorId)
     .eq("organization_id", ctx.orgId);
   if (error) return { ok: false, error: "Não foi possível desvincular." };
+  await registrarLog(supabase, {
+    tabela: "produto_fornecedores", registro_id: input.produtoId, acao: "DELETE",
+    dados_anteriores: { fornecedor_id: input.fornecedorId }, dados_novos: null,
+    executado_por: ctx.email, organization_id: ctx.orgId, user_id: ctx.userId,
+  });
   revalidar();
   return { ok: true };
 }
@@ -388,13 +403,18 @@ export async function criarUnidade(input: { sigla: string; nome: string }): Prom
   if (sigla === "" || nome === "") return { ok: false, error: "Sigla e nome." };
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const { error, data } = await supabase
     .from("unidades_medida")
-    .insert({ organization_id: ctx.orgId, sigla, nome });
+    .insert({ organization_id: ctx.orgId, sigla, nome }).select("id").single();
   if (error) {
     if (error.code === "23505") return { ok: false, error: "Sigla já existe." };
     return { ok: false, error: "Não foi possível criar." };
   }
+  await registrarLog(supabase, {
+    tabela: "unidades_medida", registro_id: (data as { id: string }).id, acao: "INSERT",
+    dados_anteriores: null, dados_novos: { sigla, nome },
+    executado_por: ctx.email, organization_id: ctx.orgId, user_id: ctx.userId,
+  });
   revalidar();
   return { ok: true };
 }

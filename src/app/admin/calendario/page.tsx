@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CalendarClock } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
+import { exigirPermissao } from "@/lib/permissoes";
 import PageHeader from "@/components/ui/PageHeader";
 import StatusBadge, { OsStatusBadge } from "@/app/admin/_components/StatusBadge";
 import type { ChamadoStatus, OsStatus } from "@/lib/types";
@@ -21,6 +22,7 @@ export default async function CalendarioPage({ searchParams }: Props) {
 
   const supabase = await createClient();
   const ctx = await requireOrg();
+  exigirPermissao(ctx, "calendario.ver");
   const hojeDt = new Date();
   const hoje = hojeDt.toISOString().slice(0, 10);
   const fimSemana = new Date(hojeDt.getTime() + 7 * 86400000).toISOString().slice(0, 10);

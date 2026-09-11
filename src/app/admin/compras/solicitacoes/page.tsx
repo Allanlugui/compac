@@ -41,12 +41,17 @@ export default async function SolicitacoesPage({ searchParams }: Props) {
   }
   const podeCriar = pode(ctx, "solicitacoes.criar");
 
-  const { data } = await supabase
+  let q = supabase
     .from("solicitacoes_compra")
-    .select("id, setor, solicitante, item, status, created_at, origem, prioridade")
+    .select("id, setor, solicitante, item, status, created_at, origem, prioridade, created_by")
     .eq("organization_id", ctx.orgId)
     .order("created_at", { ascending: false })
     .limit(200);
+  // Record scope: SOLICITANTE vê apenas próprias solicitações (created_by ou solicitante)
+  if (ctx.role === "SOLICITANTE") {
+    q = q.or(`created_by.eq.${ctx.userId},solicitante.eq.${ctx.email}`);
+  }
+  const { data } = await q;
 
   const ABERTAS = ["rascunho", "enviada", "em_analise", "pendente", "em_cotacao", "pedido_gerado"];
   const FIM = ["recebida", "encerrada", "comprado"];

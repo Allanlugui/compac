@@ -739,11 +739,19 @@ export async function marcarQrImpresso(input: { ids: string[] }): Promise<AcaoRe
   if (ids.length === 0) return { ok: false, error: "Nenhum ativo selecionado." };
 
   const supabase = await createClient();
+  const now = new Date().toISOString();
   const { error } = await supabase
     .from("ativos")
-    .update({ qr_impresso_em: new Date().toISOString() })
+    .update({ qr_impresso_em: now })
     .in("id", ids)
     .eq("organization_id", ctx.orgId);
   if (error) return { ok: false, error: "Não foi possível registrar." };
+  for (const aid of ids) {
+    await registrarLog(supabase, {
+      tabela: "ativos", registro_id: aid, acao: "UPDATE",
+      dados_anteriores: null, dados_novos: { qr_impresso_em: now },
+      executado_por: ctx.email, organization_id: ctx.orgId, user_id: ctx.userId,
+    });
+  }
   return { ok: true };
 }

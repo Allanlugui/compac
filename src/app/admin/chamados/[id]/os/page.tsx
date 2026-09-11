@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, SearchX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
+import { exigirPermissao } from "@/lib/permissoes";
 import type { ChamadoComAtivo, Compra } from "@/lib/types";
 import {
   formatarData,
@@ -115,6 +116,7 @@ export default async function OsPage({ params }: OsPageProps) {
   const { id } = await params;
   const supabase = await createClient();
   const ctx = await requireOrg();
+  exigirPermissao(ctx, "os.ver");
 
   const [
     { data: chamadoData },
@@ -134,7 +136,7 @@ export default async function OsPage({ params }: OsPageProps) {
     supabase
       .from("compras")
       .select("*")
-      .eq("id", id)
+      .eq("chamado_id", id)
       .eq("organization_id", ctx.orgId)
       .order("data_compra", { ascending: true }),
     supabase

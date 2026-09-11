@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Package } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
+import { exigirPermissao } from "@/lib/permissoes";
 import type { Movimentacao, Produto } from "@/lib/types";
 import { formatarMoeda } from "@/lib/format";
 import PageHeader from "@/components/ui/PageHeader";
@@ -13,6 +14,7 @@ export const metadata: Metadata = { title: "Estoque · SGA-M" };
 export default async function EstoquePage() {
   const supabase = await createClient();
   const ctx = await requireOrg();
+  exigirPermissao(ctx, "estoque.ver");
 
   const [{ data: prods }, { data: movs }, { data: unis }, { data: cats }, { data: forns }] = await Promise.all([
     supabase

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ClipboardCheck, Receipt, TrendingUp, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { pode } from "@/lib/permissoes";
+import { exigirPermissao, pode } from "@/lib/permissoes";
 import type { ChamadoStatus, Compra, SolicitacaoCompra } from "@/lib/types";
 import { formatarMoeda, numeroOS } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,7 @@ const STATUS_VINCULAVEIS: ChamadoStatus[] = ["aberto", "em_andamento"];
 export default async function ComprasPage() {
   const supabase = await createClient();
   const ctx = await requireOrg();
+  exigirPermissao(ctx, "compras.ver");
 
   const [{ data: comprasData }, { data: chamadosData }, { data: pedidosData }, { data: fornsData }, { data: pedsNovos }] =
     await Promise.all([

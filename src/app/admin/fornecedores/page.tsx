@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
+import { exigirPermissao } from "@/lib/permissoes";
 import { requireOrg } from "@/lib/org";
 import type { Compra, Fornecedor } from "@/lib/types";
 import PageHeader from "@/components/ui/PageHeader";
@@ -10,6 +11,7 @@ export const metadata: Metadata = { title: "Fornecedores · SGA-M" };
 export default async function FornecedoresPage() {
   const supabase = await createClient();
   const ctx = await requireOrg();
+  exigirPermissao(ctx, "fornecedores.ver");
 
   const [{ data: forns }, { data: compras }] = await Promise.all([
     supabase
