@@ -140,6 +140,47 @@ $$;
 revoke all on function public.criar_ou_obter_conversa(uuid, uuid) from public;
 grant execute on function public.criar_ou_obter_conversa(uuid, uuid) to authenticated;
 
+-- Triggers de imutabilidade (defesa em profundidade mesmo com RPC)
+create or replace function public.check_participant_immutable()
+returns trigger as $$
+begin
+  if OLD.conversa_id is distinct from NEW.conversa_id or OLD.user_id is distinct from NEW.user_id or OLD.organization_id is distinct from NEW.organization_id or OLD.membership_id is distinct from NEW.membership_id then
+    raise exception 'Campos imutáveis do participante não podem ser alterados';
+  end if;
+  -- só last_read_at pode mudar
+  if OLD.last_read_at is distinct from NEW.last_read_at and (OLD.conversa_id is distinct from NEW.conversa_id or OLD.user_id is distinct from NEW.user_id) then
+    raise exception 'Apenas last_read_at pode ser alterado';
+  end if;
+  return NEW;
+end; $$ language plpgsql;
+drop trigger if exists trg_participant_immutable on public.conversa_participantes;
+create trigger trg_participant_immutable before update on public.conversa_participantes for each row execute function public.check_participant_immutable();
+
+create or replace function public.check_conversa_immutable()
+returns trigger as $$
+begin
+  if OLD.id is distinct from NEW.id or OLD.organization_id is distinct from NEW.organization_id then
+    raise exception 'Campos imutáveis da conversa não podem ser alterados';
+  end if;
+  return NEW;
+end; $$ language plpgsql;
+drop trigger if exists trg_conversa_immutable on public.conversas;
+create trigger trg_conversa_immutable before update on public.conversas for each row execute function public.check_conversa_immutable();
+
+create or replace function public.check_message_sender()
+returns trigger as $$
+declare v_membership record;
+begin
+  select * into v_membership from public.memberships where id = NEW.sender_membership_id and user_id = auth.uid() and organization_id = NEW.organization_id and status='ativo';
+  if not found then raise exception 'Sender não pertence ao caller ou inativo ou outra organização'; end if;
+  if not exists (select 1 from public.conversa_participantes where conversa_id = NEW.conversa_id and membership_id = NEW.sender_membership_id) then
+    raise exception 'Sender não é participante da conversa';
+  end if;
+  return NEW;
+end; $$ language plpgsql;
+drop trigger if exists trg_message_sender on public.mensagens;
+create trigger trg_message_sender before insert on public.mensagens for each row execute function public.check_message_sender();
+
 -- RPC para last_read_at só próprio (com tenant check)
 create or replace function public.marcar_conversa_lida(p_conversa_id uuid)
 returns void
