@@ -1,6 +1,6 @@
 # SGA-M 2.0 — RELEASE RUNBOOK
 
-**Versão:** 2.0 RC | **Data:** 2026-09-09 | **Commit:** `d1b9c4a` + 9.1-9.7 (sem commit)
+**Versão:** 2.0.1 — PRODUCTION | **Data:** 2026-09-11 | **Commit:** `cdf6aac` | **Tag:** `v2.0.1` | **Database:** `v22` | **Production URL:** `https://compac-xi.vercel.app/`
 
 ## 1. Backup
 - `node scripts/backup_inventario.js > backup_$(date +%F).txt`
@@ -10,18 +10,18 @@
 - Vercel: `vercel.json` cron `0 6 * * *` permanece, mas não gera preventivas durante reset (sem `planos_manutencao` com `proxima_execucao` <= hoje)
 - App: `/admin/monitoramento` deve mostrar `Manutenção` se necessário
 
-## 3. Migrations (homologação, não produção)
+## 3. Migrations — PRODUÇÃO (aplicadas 2026-09-11)
 ```bash
-# Ordem idempotente, ver MIGRATIONS_INVENTORY.md
-psql $HOMOLOG_DB_URL -f schema_v19.sql # bio, preferencias
-psql $HOMOLOG_DB_URL -f schema_v20.sql # reports_to + trigger
-psql $HOMOLOG_DB_URL -f schema_v21.sql # performance_evaluations + is_subordinado
-psql $HOMOLOG_DB_URL -f schema_v22.sql # conversas + participantes + mensagens
+# Ordem idempotente — aplicadas em ialjfeltqpbgrxtymfwa.supabase.co via SQL Editor
+psql $PROD_DB_URL -f schema_v19.sql # bio, preferencias — PASS
+psql $PROD_DB_URL -f schema_v20.sql # reports_to + trigger — PASS
+psql $PROD_DB_URL -f schema_v21.sql # performance_evaluations + is_subordinado — PASS
+psql $PROD_DB_URL -f schema_v22.sql # conversas + participantes + mensagens — PASS
 ```
-Verificar `SELECT * FROM pg_tables WHERE tablename IN ('performance_evaluations','conversas')`
+Verificado `scripts/verify_v19_22.js` `8/8 PASS` + `pg_policies` 7 + `triggers` 10
 
 ## 4. Validação
-- `npx vitest run` 182/182
+- `npx vitest run` 202/202
 - `npm run lint` 0/23, `npx tsc --noEmit` 0, `npm run build` 0
 - Cross-tenant: `tests/rls-isolation` 19 + `hierarchy` 3 + `messages` 4 + `integration-role-workflows` 7
 - Field visibility: `role-access` 13 + `role-experience` 8 + `role-dashboards` 8
@@ -42,5 +42,6 @@ Verificar `SELECT * FROM pg_tables WHERE tablename IN ('performance_evaluations'
 - Vercel Logs, Supabase Reports `pg_stat_statements`
 
 ## 8. Encerramento
-- Atualizar `PROJECT_STATUS.md` `SGA-M 2.0 — RELEASE CANDIDATE`
-- Aguardar autorização para `git tag v2.0.0` + `push` + `deploy`
+- `PROJECT_STATUS.md` `SGA-M 2.0.1 — PRODUCTION` `https://compac-xi.vercel.app/` `cdf6aac` `v2.0.1` `v22`
+- `v2.0.0` `dd0f2e4` preservada, `v2.0.1` `cdf6aac`
+- Release freeze para desenvolvimento funcional

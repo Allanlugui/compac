@@ -1,7 +1,7 @@
 # SGA-M — QA FINAL
 
-**Data:** 2026-09-07
-**Baseline:** 135 testes (127 + 8 hardening-storage-audit) (51 analytics + 19 RLS + 16 mapa + 8 busca + 8 notificações + 12 hardening + 5 workflows + 4 encoding)
+**Data:** 2026-09-11 — SGA-M 2.0.1 — PRODUCTION
+**Production URL:** `https://compac-xi.vercel.app/` | **Git:** `master` `cdf6aac` | **Tag:** `v2.0.1` | **Database:** `v22` | **Baseline:** `202/202` (51+19+16+8+8+12+5+4+8+3+7+13+8+8+4+5+10+5)
 
 ---
 
@@ -17,11 +17,11 @@
 | Hardening (H1-H4) | `tests/hardening.test.ts` | 12 | ✅ PASS |
 | Workflows E2E | `tests/workflows.test.ts` | 5 | ✅ PASS (58s) |
 | Encoding | `tests/encoding.test.ts` | 4 | ✅ PASS |
-| **Total** | 10 arquivos | **135** | **135 PASS** |
+| **Total** | 20 arquivos | **202** | **202 PASS** |
 
 **Comando:** `npx vitest run` com `fileParallelism: false`, `pool: forks`, `sequence concurrent: false`, `testTimeout: 60000`, `hookTimeout: 30000`.
 
-**Quality gates:** `npm run lint` → 0 errors 14 warnings, `npx tsc --noEmit` → PASS, `npm run build` → PASS (Static + Dynamic).
+**Quality gates:** `npm run lint` → 0 errors 24 warnings, `npx tsc --noEmit` → PASS, `npm run build` → PASS (Static + Dynamic).
 
 ---
 
@@ -35,7 +35,7 @@
 | Input (termos com `%_"'\\;()`) | `busca.test.ts:12` (normalização) | ✅ PASS |
 | Route access (sem auth) | `proxy.ts` + `requireOrg` em 23 pages `/admin/*` + layout | ✅ PASS (redirect /login) |
 | QR (não exige login, não expõe custos, não aceita org arbitrária) | `qr/[hash]/page.tsx` + tests | ✅ PASS (service_role escopo mínimo, só nome/local/status/categoria) |
-| Storage (tenant) | `manutencao-midia` bucket | ⚠️ ver §6 (políticas permissivas) |
+| Storage (tenant) | `manutencao-midia` bucket | ✅ PASS (`PRIVATE` `public=false` 2026-09-11, 3 `midia_*` `authenticated` + `foldername[2]=orgId` + `eh_membro`) |
 
 ---
 
@@ -108,8 +108,7 @@ ATIVO → QR → CHAMADO → TRIAGEM → O.S. → SOLICITAÇÃO (chamado_id) →
 | WebSocket não implementado | Aceitável | `revalidate` + polling controlado |
 | Filtros avançados Unidade/Bloco no header relatórios | Média | BLOCO C header só período/aba (documentado) |
 | Cache não implementado | Aceitável | Chave documentada, não necessário <1k |
-| Storage bucket público com policies permissivas `sga_midia_*` | **MÉDIO** | Bucket `manutencao-midia:true` + `sga_midia_leitura_publica` permissive true bypassa `midia_org_leitura`. Dados são fotos/doc não sensíveis mas tenant isolation fraco. Backlog: trocar bucket para private e remover policies `sga_midia_*` públicas. |
-| Bucket `manutencao-midia` public | MÉDIO | Mesmo acima — em produção ideal `public:false` + signed URLs |
+| Storage bucket público | **RESOLVIDO** | `public=false` + `sga_midia_*` removidas via `hardening_storage_audit.sql` — verificado `listBuckets` `PRIVATE` |
 
 ---
 
@@ -131,10 +130,11 @@ ATIVO → QR → CHAMADO → TRIAGEM → O.S. → SOLICITAÇÃO (chamado_id) →
 
 | Item | Local | Classificação |
 |---|---|---|
-| `Card.tsx` órfão | `src/components/ui/Card.tsx` (0 imports) | **BAIXO** — não impacta fluxo, dashboard tem Card local |
-| `TODO`/`FIXME`/`HACK` | `src/` — 0 ocorrências reais (só `todo` português, `placeholder` atributo) | **ACEITÁVEL** |
-| `Storage public policies` | `storage.objects` `sga_midia_*` | **MÉDIO** — ver §6 |
-| `chamados.plano_id` nullable | `schema` + `preventivas` | **ACEITÁVEL** — O.S. preventiva tem plano_id, demais null |
+| `Card.tsx` órfão | Removido em `fix/auditoria-360` | **RESOLVIDO** |
+| `TODO`/`FIXME`/`HACK` | `src/` — 0 ocorrências reais | **ACEITÁVEL** |
+| `Storage public policies` | Removidas | **RESOLVIDO** |
+| `chamados.plano_id` nullable | `schema` + `preventivas` | **ACEITÁVEL** |
+| `unidades_medida` sem UI | Seed sem uso, backlog | **MELHORIA** |
 
 **Nenhum CRÍTICO/ALTO.**
 
@@ -148,11 +148,19 @@ BLOCO B ✅  (dashboard 15 KPIs)
 BLOCO C ✅  (8 relatórios + CSV BOM)
 BLOCO D ✅  (16 mapa)
 BLOCO E ✅  (16 busca/notificações)
-FASE FINAL ✅ (102 → 127 testes, lint 0, tsc 0, build 0)
-FASE 7 ✅   (completude operacional)
-FASE 7.1 ✅ (integrações)
-FASE 7.2 ✅ (workflows + chamado_id)
-FASE 8 ✅   (homologação + cron fix + encoding)
+FASE FINAL ✅ (102 → 127)
+FASE 7 ✅ 7.1 ✅ 7.2 ✅
+FASE 8 ✅ (135)
+FASE 9.1 ✅ (39 perms, 148)
+FASE 9.2 ✅ (Meu Perfil, 156)
+FASE 9.3 ✅ (RoleDashboard, 164)
+FASE 9.4 ✅ (hierarquia, organograma, 167)
+FASE 9.5 ✅ (desempenho, 171)
+FASE 9.6 ✅ (mensagens DB, 175)
+FASE 9.7 ✅ (integração, 182)
+FASE 10 ✅ (auditoria 360, 202)
+SGA-M 2.0.1 ✅ (v22, 202/202, 38 rotas 0 404, 19 forms)
 ```
 
-**Pronto para produção com limitação MÉDIA documentada (storage public).**
+**SGA-M 2.0.1 — PRODUCTION** `https://compac-xi.vercel.app/` `cdf6aac` `v2.0.1` `v22`.
+**Release freeze** para desenvolvimento funcional.

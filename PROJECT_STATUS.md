@@ -1,7 +1,8 @@
 # SGA-M — PROJECT STATUS
 
-**Data:** 2026-09-07 (FASE 8)
-**Branch:** `master` (`0238929` + FASE 7/7.1/7.2 + FASE 8 cron fix)
+**Data:** 2026-09-11 — SGA-M 2.0.1 — PRODUCTION
+**Production URL:** `https://compac-xi.vercel.app/` | **Git:** `master` `cdf6aac` | **Tag:** `v2.0.1` `cdf6aac` | **Database:** `v22` `ialjfeltqpbgrxtymfwa.supabase.co`
+**Branch:** `master` (`cdf6aac` 202 testes) — Release 2.0.1 congelada para desenvolvimento funcional.
 
 ---
 
@@ -89,17 +90,9 @@
 ## Testes
 
 ```
-51 Analytics
-19 RLS isolation
-16 Mapa
-8 Busca
-8 Notificações
-12 Hardening H1-H4
-5 Workflows E2E (FASE 8)
-4 Encoding
-8 Hardening Storage/Auditoria (GATE FINAL)
+51 Analytics + 19 RLS + 16 Mapa + 8 Busca + 8 Notificações + 12 Hardening H1-H4 + 5 Workflows + 4 Encoding + 8 Hardening Storage/Auditoria + 3 Hierarchy + 7 Integration + 13 Role-Access + 8 Role-Dashboards + 8 Role-Experience + 4 Performance + 4 Messages + 5 Messages-Real + 10 Messages-Harden + 5 Field-Integrity
 ---
-135 Total (10 suítes) — 135/135 PASS
+202 Total (20 suítes) — 202/202 PASS
 ```
 
 `vitest` com `fileParallelism: false`, `pool: forks`, `sequence concurrent: false`, `testTimeout: 60000`.
@@ -117,21 +110,20 @@
 
 ---
 
-## FASE 8 ✅ HOMOLOGAÇÃO FINAL + HARDENING
+## SGA-M 2.0.1 — PRODUCTION
 
-- **Snapshot:** `dcbb45e`, Node 24.13, npm 11.6, Next 16.3.4, React 19.2.8, Supabase 2.115, `@supabase/ssr` 0.12.6
-- **Ambiente:** Vercel (vercel.json cron), Supabase homologação `ialjfeltqpbgrxtymfwa` (verificado 2026-09-09), Auth + Storage `manutencao-midia` PRIVATE, RLS 36 tabelas, 75 policies → 3 storage tenant-aware
-- **Migration v18:** APLICADA (verificado `chamado_id`, FK, índice `solicitacoes_chamado_idx`, trigger `trg_org_solic_chamado`, `chamados_ativo_fk RESTRICT`)
-- **Cron:** `0 6 * * *` ativo (fix service_role fallback + CRON_SECRET check)
-- **Fluxo principal:** PASS (workflows.test.ts 5/5: E2E completo, parcial, duplicidade, cross-tenant, preventiva idempotente)
-- **Encoding:** PASS (0 mojibake, 4 testes, CSV BOM, dashboard fix 0238929)
-- **Hardening:** PASS (bucket PRIVATE, 3 policies midia_*, cross-tenant list/delete/upload bloqueado, signed URL 3600s isolada, auditoria 11 sessao +1 anômalo, 135/135)
-- **Pontas soltas:** 0 crítico/alto/médio, 1 baixo (Card.tsx órfão aceitável)
+**Production URL:** `https://compac-xi.vercel.app/` | **Git:** `cdf6aac` | **Tag:** `v2.0.1` | **Database:** `v22` `ialjfeltqpbgrxtymfwa.supabase.co` | **Tests:** `202/202` | **Routes:** `38` `404:0` | **Forms:** `19/19` | **Audit:** PASS | **QA:** PASS | **Monitoring:** PASS — Release 2.0.1 congelada para desenvolvimento funcional.
 
-## Próximos Passos Operacionais
+**Backlog (não bloqueador):** `unidades_medida` sem UI (melhoria).
 
-- Homologação com PO (fluxo sem copiar IDs, todos links navegáveis)
-- Treinamento por role (ADMIN/GESTOR/TECNICO/COMPRAS/AUDITOR/SOLICITANTE)
-- Backup Supabase PITR + Storage
-- Monitoramento Vercel + Supabase `EXPLAIN ANALYZE` para 1k+
-- Backlog: storage `public:false` + remover `sga_midia_*` públicas, `checklist_itens`/`notificacoes` `tem_papel`, `xlsx`, `full-text`, `WebSocket`
+**Estado:** `OPERAÇÃO + MANUTENÇÃO` — novos bugs com `ID/Severidade/Módulo/Rota/Role/Reprodução/Evidência` antes de corrigir.
+
+## Operação
+
+- Monitoramento Vercel/Supabase/Auth/Storage/RLS
+- Preservar backups `2026-09-11` `1 org` `d1b9c4a`→`cdf6aac` `v22`
+- Novos bugs: registrar com `ID/Severidade/Módulo/Rota/Role/Reprodução` antes de corrigir
+
+## Release Freeze
+
+`Release 2.0.1 congelada para desenvolvimento funcional.`
