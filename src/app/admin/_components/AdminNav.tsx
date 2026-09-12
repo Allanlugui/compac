@@ -72,7 +72,7 @@ export const SECOES_NAV: SecaoNav[] = [
         href: "/admin/ordens-servico",
         rotulo: "Ordens de Serviço",
         Icone: Wrench,
-        ativoEm: (p) => p.startsWith("/admin/ordens-servico") || p.startsWith("/admin/chamados"),
+        ativoEm: (p) => p.startsWith("/admin/ordens-servico"),
         papeis: ["ADMIN", "GESTOR", "TECNICO", "AUDITOR"],
       },
       {
@@ -162,6 +162,13 @@ export const SECOES_NAV: SecaoNav[] = [
         ativoEm: (p) => p.startsWith("/admin/mensagens"),
         papeis: TODOS,
       },
+      {
+        href: "/admin/desempenho",
+        rotulo: "Desempenho",
+        Icone: ChartColumn,
+        ativoEm: (p) => p.startsWith("/admin/desempenho"),
+        papeis: TODOS,
+      },
     ],
   },
   {
@@ -186,6 +193,13 @@ export const SECOES_NAV: SecaoNav[] = [
         rotulo: "Auditoria",
         Icone: ShieldCheck,
         ativoEm: (p) => p.startsWith("/admin/auditoria"),
+        papeis: ["ADMIN", "GESTOR", "AUDITOR"],
+      },
+      {
+        href: "/admin/monitoramento",
+        rotulo: "Monitoramento",
+        Icone: Building2,
+        ativoEm: (p) => p.startsWith("/admin/monitoramento"),
         papeis: ["ADMIN", "GESTOR", "AUDITOR"],
       },
       {

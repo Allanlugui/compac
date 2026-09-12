@@ -80,8 +80,8 @@ export function RoleDashboard({ role, data, periodo }: { role: ContextoOrg["role
           <Card titulo="Solicitações pendentes" valor={d.solicitacoes} href="/admin/compras/solicitacoes" />
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
-          <Card titulo="SLA" valor={d.sla.taxaDentro !== null ? `${d.sla.taxaDentro.toFixed(1)}%` : "—"} />
-          <Card titulo="Preventivas" valor="—" sub="Em breve" />
+          <Card titulo="SLA" valor={d.sla.taxaDentro !== null ? `${d.sla.taxaDentro.toFixed(1)}%` : "—"} estado={d.sla.taxaDentro === null ? "insufficient_data" : "ok"} />
+          <Card titulo="Preventivas" valor="—" estado="insufficient_data" sub="Sem dados suficientes" />
         </div>
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <h3 className="text-sm font-black">Desempenho da Equipe</h3>
@@ -114,7 +114,7 @@ export function RoleDashboard({ role, data, periodo }: { role: ContextoOrg["role
         </div>
         <div className="flex gap-2">
           <Link href="/admin/chamados/novo" className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-bold text-white">Nova O.S.</Link>
-          <Link href="/qr/placeholder" className="rounded-xl border px-4 py-2 text-sm font-bold">Ler QR</Link>
+          <Link href="/admin/ativos" className="rounded-xl border px-4 py-2 text-sm font-bold">Ver Ativos</Link>
         </div>
       </section>
     );
@@ -144,7 +144,7 @@ export function RoleDashboard({ role, data, periodo }: { role: ContextoOrg["role
       <section className="space-y-3">
         <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">Conformidade</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Card titulo="Auditorias" valor="—" sub="Em breve" href="/admin/auditoria" />
+          <Card titulo="Auditorias" valor="—" estado="insufficient_data" sub="Sem dados" href="/admin/auditoria" />
           <Card titulo="O.S. abertas (leitura)" valor={d.osAbertas} href="/admin/chamados?os_status=aberta" />
           <Card titulo="Solicitações" valor={d.solicitacoes} href="/admin/compras/solicitacoes" />
           <Card titulo="Estoque (leitura)" valor={d.estoque.disponivel} href="/admin/estoque" />
@@ -166,7 +166,7 @@ export function RoleDashboard({ role, data, periodo }: { role: ContextoOrg["role
           <Card titulo="Meus chamados" valor={d.meusChamados ?? 0} href="/admin/chamados" />
           <Card titulo="Minhas solicitações" valor={d.minhasSolicitacoes ?? d.solicitacoes} href="/admin/compras/solicitacoes" />
           <Card titulo="O.S. relacionadas" valor={d.osAbertas} href="/admin/chamados?os_status=aberta" />
-          <Card titulo="Notificações" valor="—" href="/admin/notificacoes" />
+          <Card titulo="Notificações" valor="—" estado="insufficient_data" sub="Sem dados" href="/admin/notificacoes" />
         </div>
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <h3 className="text-sm font-black">Meu Desempenho</h3>

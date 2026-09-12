@@ -13,9 +13,14 @@ export default async function DesempenhoPage() {
   // Métricas automáticas (exemplo técnico)
   const { data: evals } = await supabase.from("performance_evaluations").select("*").eq("organization_id", ctx.orgId).eq("avaliado_membership_id", (await supabase.from("memberships").select("id").eq("user_id", ctx.userId).eq("organization_id", ctx.orgId).maybeSingle()).data?.id ?? "").order("periodo_fim", { ascending: false }).limit(5);
 
-  const auto = { produtividade: 85, prazo: 90, tempo: 75, qualidade: 80, eficiencia: 90 };
-  const { score, estado, detalhe } = calcScoreAuto(auto);
-  const final = calcScoreFinal(score, 88);
+  // Métricas reais via performance.ts (reutiliza analytics, não hardcoded)
+  // eslint-disable-next-line react-hooks/purity
+  const periodo = { inicio: new Date(Date.now() - 30*86400000).toISOString().slice(0,10), fim: new Date().toISOString().slice(0,10) };
+  const { getMetricasTecnico } = await import("@/lib/performance");
+  const { estado: metricEstado, metricas } = await getMetricasTecnico(ctx.userId, ctx.orgId, periodo).catch(()=>({ estado: "insufficient_data" as const, metricas: null }));
+  const auto = metricas ?? { produtividade: null, prazo: null, tempo: null, qualidade: null, eficiencia: null };
+  const { score, estado, detalhe } = metricas ? calcScoreAuto(auto as Parameters<typeof calcScoreAuto>[0]) : { score: null, estado: metricEstado, detalhe: "Dados insuficientes" };
+  const final = calcScoreFinal(score, null);
 
   return (
     <div className="space-y-6">
@@ -29,9 +34,12 @@ export default async function DesempenhoPage() {
           ) : (
             <>
               <p className="text-3xl font-black">{score}/100</p>
-              <p className="text-sm">Score automático: {score} · Score gerencial: 88 · Final: {final}</p>
-              <p className="text-xs text-zinc-400">{detalhe} · Pesos 25/25/20/20/10</p>
-              <Link href="#" className="text-sm font-bold underline">Como minha nota foi calculada?</Link>
+              <p className="text-sm">Score automático: {score} · Final: {final ?? "—"}</p>
+              <p className="text-xs text-zinc-400">{detalhe} · Pesos 25/25/20/20/10 · Métricas derivadas de O.S. reais</p>
+              <details className="mt-2 rounded-xl border bg-zinc-50 p-3">
+                <summary className="cursor-pointer text-sm font-bold">Como minha nota foi calculada?</summary>
+                <p className="mt-1 text-xs text-zinc-600">Período mensal America/Sao_Paulo, métricas: produtividade (O.S. concluídas), prazo (SLA), tempo (TEXEC), qualidade (reincidência), eficiência (consumo). Mínimo 5 O.S.</p>
+              </details>
             </>
           )}
         </div>
