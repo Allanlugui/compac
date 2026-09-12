@@ -24,10 +24,18 @@ async function checkStorage() {
 export default async function MonitoramentoPage() {
   const ctx = await requireOrg();
   exigirPermissao(ctx, "monitoramento.ver");
+  const checkAuth = async () => {
+    const supabase = await createClient();
+    // eslint-disable-next-line react-hooks/purity
+    const start = Date.now();
+    const { error } = await supabase.auth.getUser();
+    // eslint-disable-next-line react-hooks/purity
+    return { status: error ? "Degradado" : "Online", latency: Date.now() - start, error: error?.message };
+  };
   const [db, storage, auth] = await Promise.all([
     checkDb(),
     checkStorage(),
-    Promise.resolve({ status: "Online", latency: 0 }),
+    checkAuth(),
   ]);
 
   const utilizacao = await (async () => {

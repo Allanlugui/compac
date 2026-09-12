@@ -43,9 +43,10 @@ export async function getMetricasTecnico(userId: string, orgId: string, periodo:
   const dentro = slaData?.filter(c => c.concluido_em && c.prazo && c.concluido_em.slice(0,10) <= c.prazo).length ?? 0;
   const prazo = slaData && slaData.length ? Math.round((dentro / slaData.length) * 100) : null;
   // Tempo: reusar analytics calcTempoExecucao
-  // Qualidade: reincidência inversa
-  const qualidade = 80; // placeholder, derivado de reincidencia
-  const metricas = { produtividade: Math.min(100, (osConcluidas ?? 0) * 10), prazo, tempo: 75, qualidade, eficiencia: 85 };
+  const tempo = null;
+  const qualidade = null;
+  const eficiencia = null;
+  const metricas = { produtividade: Math.min(100, (osConcluidas ?? 0) * 10), prazo, tempo, qualidade, eficiencia };
   return { estado: "active" as const, metricas, count: osConcluidas ?? 0 };
 }
 

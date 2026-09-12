@@ -139,17 +139,29 @@ export async function listarConversas(): Promise<{ id: string; participantes: st
   if (!myId) return [];
   if (await isDbAvailable()) {
     const { data: parts } = await supabase.from("conversa_participantes").select("conversa_id, last_read_at").eq("membership_id", myId);
+    const convIds = (parts ?? []).map(p=>(p as { conversa_id: string }).conversa_id);
+    if (convIds.length === 0) return [];
+    // batch: participantes e mensagens
+    const { data: allParts } = await supabase.from("conversa_participantes").select("conversa_id, membership_id").in("conversa_id", convIds);
+    const { data: allMsgs } = await supabase.from("mensagens").select("conversa_id, conteudo, created_at, sender_membership_id").in("conversa_id", convIds).order("created_at", { ascending: false });
+    const partMap = new Map<string, string[]>();
+    for (const r of (allParts ?? []) as { conversa_id: string; membership_id: string }[]) {
+      if (!partMap.has(r.conversa_id)) partMap.set(r.conversa_id, []);
+      partMap.get(r.conversa_id)!.push(r.membership_id);
+    }
+    const msgMap = new Map<string, { conteudo: string; created_at: string; sender: string }[]>();
+    for (const m of (allMsgs ?? []) as { conversa_id: string; conteudo: string; created_at: string; sender_membership_id: string }[]) {
+      if (!msgMap.has(m.conversa_id)) msgMap.set(m.conversa_id, []);
+      msgMap.get(m.conversa_id)!.push({ conteudo: m.conteudo, created_at: m.created_at, sender: m.sender_membership_id });
+    }
     const out: { id: string; participantes: string[]; ultima: string | null; naoLidas: number }[] = [];
     for (const p of (parts ?? []) as { conversa_id: string; last_read_at: string | null }[]) {
-      const { data: conv } = await supabase.from("conversas").select("id").eq("id", p.conversa_id).maybeSingle();
-      if (!conv) continue;
-      const { data: allParts } = await supabase.from("conversa_participantes").select("membership_id").eq("conversa_id", p.conversa_id);
-      const participantes = (allParts ?? []).map(x=>(x as { membership_id: string }).membership_id);
-      const { data: msgs } = await supabase.from("mensagens").select("conteudo, created_at, sender_membership_id").eq("conversa_id", p.conversa_id).order("created_at", { ascending: false }).limit(1);
-      const ultima = (msgs as { conteudo: string }[] | null)?.[0]?.conteudo?.slice(0,40) ?? null;
-      const lastRead = p.last_read_at ? new Date(p.last_read_at).getTime() : 0;
-      const { count } = await supabase.from("mensagens").select("id", { count: "exact", head: true }).eq("conversa_id", p.conversa_id).neq("sender_membership_id", myId).gt("created_at", p.last_read_at ?? "1970-01-01");
-      out.push({ id: p.conversa_id, participantes, ultima, naoLidas: count ?? 0 });
+      const participantes = partMap.get(p.conversa_id) ?? [];
+      const msgs = msgMap.get(p.conversa_id) ?? [];
+      const ultima = msgs[0]?.conteudo?.slice(0,40) ?? null;
+      const lastRead = p.last_read_at ?? "1970-01-01";
+      const naoLidas = msgs.filter(m => m.created_at > lastRead && m.sender !== myId).length;
+      out.push({ id: p.conversa_id, participantes, ultima, naoLidas });
     }
     return out.sort((a,b)=>b.id.localeCompare(a.id));
   }
