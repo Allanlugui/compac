@@ -8,6 +8,7 @@ import type {
   Categoria,
 } from "@/lib/types";
 import { criarAtivo } from "./actions";
+import SeletorLocalidade from "../estrutura/SeletorLocalidade";
 
 const STATUS: { id: AtivoStatus; rotulo: string }[] = [
   { id: "operacional", rotulo: "Operacional" },
@@ -23,15 +24,17 @@ const STATUS: { id: AtivoStatus; rotulo: string }[] = [
 export default function NovoAtivoForm({
   categorias,
   localidades,
+  initialLocalidadeId,
 }: {
   categorias: Pick<Categoria, "id" | "nome">[];
-  localidades: { id: string; nome: string; tipo: string }[];
+  localidades: { id: string; nome: string; tipo: string; parent_id: string | null }[];
+  initialLocalidadeId?: string;
 }) {
   const router = useRouter();
   const [nome, setNome] = useState("");
   const [codigo, setCodigo] = useState("");
   const [categoriaId, setCategoriaId] = useState("");
-  const [localidadeId, setLocalidadeId] = useState("");
+  const [localidadeId, setLocalidadeId] = useState(initialLocalidadeId ?? "");
   const [status, setStatus] = useState<AtivoStatus>("operacional");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -91,15 +94,10 @@ export default function NovoAtivoForm({
             ))}
           </select>
         </label>
-        <label className="block">
+        <div className="block">
           <span className="mb-1 block text-xs font-bold text-zinc-700">Localização</span>
-          <select value={localidadeId} onChange={(e) => setLocalidadeId(e.target.value)} disabled={salvando} className={campo}>
-            <option value="">Sem localização</option>
-            {localidades.map((l) => (
-              <option key={l.id} value={l.id}>{l.nome}</option>
-            ))}
-          </select>
-        </label>
+          <SeletorLocalidade localidades={localidades} value={localidadeId} onChange={setLocalidadeId} disabled={salvando} />
+        </div>
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-zinc-700">Status</span>
           <select value={status} onChange={(e) => setStatus(e.target.value as AtivoStatus)} disabled={salvando} className={campo}>

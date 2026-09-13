@@ -8,6 +8,7 @@ import type {
   Categoria,
 } from "@/lib/types";
 import { atualizarAtivo, excluirAtivo } from "../actions";
+import SeletorLocalidade from "../../estrutura/SeletorLocalidade";
 
 type FornOpt = { id: string; nome: string };
 
@@ -33,7 +34,7 @@ export default function AtivoForm({
 }: {
   ativo: AtivoCompleto;
   categorias: Pick<Categoria, "id" | "nome">[];
-  localidades: { id: string; nome: string; tipo: string }[];
+  localidades: { id: string; nome: string; tipo: string; parent_id: string | null }[];
   fornecedores: FornOpt[];
   /** Exclusão física é SÓ ADMIN (com checagem de dependências). */
   podeExcluir: boolean;
@@ -139,7 +140,7 @@ export default function AtivoForm({
         </Secao>
 
         <Secao titulo="2 · Localização">
-          <label className="block"><span className={rotulo}>Local (estrutura)</span><select value={f.localidade_id} onChange={(e) => set("localidade_id", e.target.value)} disabled={salvando} className={campo}><option value="">Sem vínculo</option>{localidades.map((l) => (<option key={l.id} value={l.id}>{l.nome}</option>))}</select></label>
+          <div className="block"><span className={`${rotulo} mb-1`}>Local (estrutura)</span><SeletorLocalidade localidades={localidades} value={f.localidade_id} onChange={(v) => set("localidade_id", v)} disabled={salvando} /></div>
           <label className="block"><span className={rotulo}>Complemento (sala, ponto…)</span><input value={f.localizacao} onChange={(e) => set("localizacao", e.target.value)} disabled={salvando} maxLength={160} className={campo} /></label>
         </Secao>
 

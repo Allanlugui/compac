@@ -517,6 +517,12 @@ export default function ArvoreFisica({ localidades, ativos }: Props) {
                 <p className="mt-2 text-xs text-zinc-400">
                   {subtreeMap.get(selecionadoObj.id) !== diretosMap.get(selecionadoObj.id) ? `Total na estrutura (inclui filhos): ${subtreeMap.get(selecionadoObj.id) ?? 0}` : ""}
                 </p>
+                <Link
+                  href={`/admin/ativos?novaLocalidade=${selecionadoObj.id}`}
+                  className="mt-2 inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-zinc-900 px-3 text-xs font-bold text-white hover:bg-zinc-700"
+                >
+                  <Plus className="size-4" /> Criar ativo nesta localidade
+                </Link>
               </div>
             </div>
           )}

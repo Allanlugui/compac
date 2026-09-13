@@ -25,11 +25,11 @@ const STATUS_FILTRO = [
 ] as const;
 
 interface Props {
-  searchParams: Promise<{ q?: string; status?: string; categoria?: string; localidade?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; categoria?: string; localidade?: string; novaLocalidade?: string }>;
 }
 
 export default async function AdminAtivosPage({ searchParams }: Props) {
-  const { q, status, categoria, localidade } = await searchParams;
+  const { q, status, categoria, localidade, novaLocalidade } = await searchParams;
   const termo = (q ?? "").trim().toLowerCase();
 
   const supabase = await createClient();
@@ -66,7 +66,7 @@ export default async function AdminAtivosPage({ searchParams }: Props) {
       .order("nome"),
     supabase
       .from("localidades")
-      .select("id, nome, tipo")
+      .select("id, nome, tipo, parent_id")
       .eq("organization_id", ctx.orgId)
       .order("nome"),
   ]);
@@ -119,7 +119,12 @@ export default async function AdminAtivosPage({ searchParams }: Props) {
       {podeCriar && (
         <NovoAtivoForm
           categorias={(cats ?? []) as { id: string; nome: string }[]}
-          localidades={(locs ?? []) as { id: string; nome: string; tipo: string }[]}
+          localidades={(locs ?? []) as { id: string; nome: string; tipo: string; parent_id: string | null }[]}
+          initialLocalidadeId={
+            typeof novaLocalidade === "string" && (locs ?? []).some((l) => (l as { id: string }).id === novaLocalidade)
+              ? novaLocalidade
+              : undefined
+          }
         />
       )}
 

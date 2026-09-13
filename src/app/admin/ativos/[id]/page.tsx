@@ -136,7 +136,7 @@ export default async function AtivoPage({ params, searchParams }: Props) {
       .order("nome"),
     supabase
       .from("localidades")
-      .select("id, nome, tipo")
+      .select("id, nome, tipo, parent_id")
       .eq("organization_id", ctx.orgId)
       .order("nome"),
     supabase
@@ -196,9 +196,21 @@ export default async function AtivoPage({ params, searchParams }: Props) {
   const categoriaAtual = ((catsData ?? []) as { id: string; nome: string; atributos: AtributoCategoria[] }[]).find(
     (c) => c.id === ativo.categoria_id,
   );
-  const localidadeAtual = ((locsData ?? []) as { id: string; nome: string }[]).find(
-    (l) => l.id === ativo.localidade_id,
-  );
+  const locs = ((locsData ?? []) as { id: string; nome: string; tipo: string; parent_id: string | null }[]);
+  const locPorId = new Map(locs.map((l) => [l.id, l]));
+  function caminhoLocalidade(id: string): string {
+    const partes: string[] = [];
+    let cur = locPorId.get(id);
+    const vistos = new Set<string>();
+    while (cur && !vistos.has(cur.id)) {
+      vistos.add(cur.id);
+      partes.unshift(cur.nome);
+      cur = cur.parent_id ? locPorId.get(cur.parent_id) : undefined;
+    }
+    return partes.join(" › ");
+  }
+  const localidadeAtual = locs.find((l) => l.id === ativo.localidade_id);
+  const caminhoAtivo = ativo.localidade_id ? caminhoLocalidade(ativo.localidade_id) : null;
   const comp = completude(ativo, docs.length);
 
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
@@ -208,7 +220,7 @@ export default async function AtivoPage({ params, searchParams }: Props) {
     <div className="space-y-6">
       <PageHeader
         titulo={ativo.codigo ? `${ativo.codigo} · ${ativo.nome}` : ativo.nome}
-        descricao={`${localidadeAtual?.nome || ativo.localizacao || "Sem localização"} · ${ctx.orgNome}`}
+        descricao={`${caminhoAtivo || ativo.localizacao || "Sem localização"} · ${ctx.orgNome}`}
         voltar={{ href: "/admin/ativos", rotulo: "Ativos" }}
         acoes={<AtivoStatusBadge status={ativo.status} />}
       />
@@ -264,7 +276,7 @@ export default async function AtivoPage({ params, searchParams }: Props) {
             <dl className="grid gap-3 text-sm sm:grid-cols-2">
               <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Status</dt><dd className="mt-0.5"><AtivoStatusBadge status={ativo.status} /></dd></div>
               <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Categoria</dt><dd className="font-semibold">{categoriaAtual?.nome ?? "—"}</dd></div>
-              <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Localização</dt><dd className="font-semibold">{localidadeAtual?.nome ?? ativo.localizacao ?? "—"}</dd></div>
+              <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Localização</dt><dd className="font-semibold">{caminhoAtivo ? (<Link href="/admin/estrutura" className="underline-offset-2 hover:underline">{caminhoAtivo}</Link>) : (ativo.localizacao ?? "—")}</dd></div>
               <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Responsável</dt><dd className="font-semibold">{ativo.responsavel || "—"}{ativo.equipe ? ` · ${ativo.equipe}` : ""}</dd></div>
               <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Criticidade</dt><dd className="font-semibold">{ativo.criticidade ?? "—"}</dd></div>
               <div><dt className="text-xs font-bold tracking-wide text-zinc-500 uppercase">Garantia até</dt><dd className="font-semibold">{ativo.garantia_ate ?? "—"}</dd></div>
@@ -299,7 +311,7 @@ export default async function AtivoPage({ params, searchParams }: Props) {
           <AtivoForm
             ativo={ativo}
             categorias={(catsData ?? []) as { id: string; nome: string }[]}
-            localidades={(locsData ?? []) as { id: string; nome: string; tipo: string }[]}
+            localidades={locs as { id: string; nome: string; tipo: string; parent_id: string | null }[]}
             fornecedores={(fornsData ?? []) as { id: string; nome: string }[]}
             podeExcluir={podeExcluir}
           />
