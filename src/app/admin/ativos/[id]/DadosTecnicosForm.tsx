@@ -89,9 +89,19 @@ export default function DadosTecnicosForm({
                   <option key={o} value={o}>{o}</option>
                 ))}
               </select>
+            ) : a.tipo === "texto" ? (
+              <textarea
+                value={vals[a.nome] ?? ""}
+                onChange={(e) => { setVals({ ...vals, [a.nome]: e.target.value }); setOk(false); }}
+                disabled={salvando}
+                required={a.obrigatorio}
+                rows={4}
+                className="min-h-[44px] w-full rounded-xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 focus:outline-none disabled:opacity-60 resize-y"
+                placeholder="Especificação técnica (sem limite de caracteres)"
+              />
             ) : (
               <input
-                type={a.tipo === "numero" ? "number" : a.tipo === "data" ? "date" : "text"}
+                type={a.tipo === "numero" ? "number" : "date"}
                 step={a.tipo === "numero" ? "any" : undefined}
                 value={vals[a.nome] ?? ""}
                 onChange={(e) => { setVals({ ...vals, [a.nome]: e.target.value }); setOk(false); }}

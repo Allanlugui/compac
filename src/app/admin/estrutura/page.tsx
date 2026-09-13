@@ -5,7 +5,8 @@ import { requireOrg } from "@/lib/org";
 import { exigirPermissao } from "@/lib/permissoes";
 import type { Categoria, Localidade } from "@/lib/types";
 import PageHeader from "@/components/ui/PageHeader";
-import EstruturaManager from "./EstruturaManager";
+import ArvoreFisica, { type AtivoMini } from "./ArvoreFisica";
+import CategoriasManager from "./CategoriasManager";
 
 export const metadata: Metadata = { title: "Estrutura · SGA-M" };
 
@@ -26,7 +27,7 @@ export default async function EstruturaPage() {
   }
 
   const supabase = await createClient();
-  const [{ data: locs }, { data: cats }] = await Promise.all([
+  const [{ data: locs }, { data: cats }, { data: ativosData }] = await Promise.all([
     supabase
       .from("localidades")
       .select("id, organization_id, nome, tipo, parent_id, created_at")
@@ -38,7 +39,13 @@ export default async function EstruturaPage() {
       .eq("organization_id", ctx.orgId)
       .order("tipo", { ascending: true })
       .order("nome", { ascending: true }),
+    supabase
+      .from("ativos")
+      .select("id, nome, codigo, status, localidade_id")
+      .eq("organization_id", ctx.orgId),
   ]);
+
+  const ativos = (ativosData ?? []) as AtivoMini[];
 
   return (
     <div className="space-y-6">
@@ -46,10 +53,12 @@ export default async function EstruturaPage() {
         titulo="Estrutura"
         descricao={`${ctx.orgNome} · hierarquia física e categorias com dados técnicos.`}
       />
-      <EstruturaManager
-        iniciaisLocs={(locs ?? []) as Localidade[]}
-        iniciaisCats={(cats ?? []) as Categoria[]}
-      />
+      <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <ArvoreFisica localidades={(locs ?? []) as Localidade[]} ativos={ativos} />
+      </div>
+      <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm mt-4">
+        <CategoriasManager iniciaisCats={(cats ?? []) as Categoria[]} />
+      </div>
     </div>
   );
 }

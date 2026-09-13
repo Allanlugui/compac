@@ -173,7 +173,7 @@ export async function editarLocalidade(input: {
   return { ok: true };
 }
 
-/** Exclui nó (filhos em cascata; ativos vinculados perdem o vínculo). */
+/** Exclui nó somente se sem filhos e sem ativos vinculados. */
 export async function excluirLocalidade(input: { id: string }): Promise<EstruturaResult> {
   const ctx = await requireOrg();
   exigirPermissao(ctx, "estrutura.escrever");
@@ -187,6 +187,13 @@ export async function excluirLocalidade(input: { id: string }): Promise<Estrutur
     .eq("organization_id", ctx.orgId)
     .maybeSingle();
   if (!atual) return { ok: false, error: "Local não encontrado." };
+
+  const [{ count: filhos }, { count: ativos }] = await Promise.all([
+    supabase.from("localidades").select("id", { count: "exact", head: true }).eq("parent_id", input.id).eq("organization_id", ctx.orgId),
+    supabase.from("ativos").select("id", { count: "exact", head: true }).eq("localidade_id", input.id).eq("organization_id", ctx.orgId),
+  ]);
+  if ((filhos ?? 0) > 0) return { ok: false, error: "Não é possível excluir: existem sublocalidades vinculadas. Mova ou exclua os filhos primeiro." };
+  if ((ativos ?? 0) > 0) return { ok: false, error: "Não é possível excluir: existem ativos vinculados a esta localidade." };
 
   const { error } = await supabase
     .from("localidades")

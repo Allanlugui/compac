@@ -194,7 +194,7 @@ export async function atualizarAtivo(input: AtualizarAtivoInput): Promise<AcaoRe
   const supabase = await createClient();
   const { data: atual } = await supabase
     .from("ativos")
-    .select("id, nome, codigo, categoria_id")
+    .select("id, nome, codigo, categoria_id, dados_tecnicos")
     .eq("id", input.id)
     .eq("organization_id", ctx.orgId)
     .maybeSingle();
@@ -238,12 +238,16 @@ export async function atualizarAtivo(input: AtualizarAtivoInput): Promise<AcaoRe
     fornecedor_id = input.fornecedor_id;
   }
 
-  // Dados técnicos: só chaves do schema; obrigatórios preenchidos.
+  // Dados técnicos: valida chaves do schema atual, mas preserva valores existentes
+  // de outra categoria para não apagar silenciosamente na troca.
+  // Texto livre (tipo "texto") não tem limite artificial; número/seleção/data têm validação de formato.
   const dados_tecnicos: Record<string, string> = {};
+  const existentes = ((atual as unknown as { dados_tecnicos?: Record<string, string> }).dados_tecnicos ?? {}) as Record<string, string>;
   if (input.dados_tecnicos && typeof input.dados_tecnicos === "object") {
     const entradas = Object.entries(input.dados_tecnicos).slice(0, 50);
     for (const a of atributos) {
-      const v = (entradas.find(([k]) => k === a.nome)?.[1] ?? "").trim().slice(0, 200);
+      const raw = (entradas.find(([k]) => k === a.nome)?.[1] ?? "").trim();
+      const v = a.tipo === "texto" ? raw : raw.slice(0, 200);
       if (a.obrigatorio && v === "") {
         return { ok: false, error: `Atributo obrigatório: ${a.nome}.` };
       }
@@ -260,9 +264,20 @@ export async function atualizarAtivo(input: AtualizarAtivoInput): Promise<AcaoRe
         dados_tecnicos[a.nome] = v;
       }
     }
-  } else if (atributos.some((a) => a.obrigatorio)) {
-    return { ok: false, error: "Preencha os dados técnicos obrigatórios." };
+    // Preserva chaves antigas que não existem no novo schema (troca de categoria segura).
+    for (const [k, v] of Object.entries(existentes)) {
+      if (!(k in dados_tecnicos) && typeof v === "string" && v.trim() !== "") {
+        dados_tecnicos[k] = v;
+      }
+    }
+  } else {
+    // Sem input de técnicos: preserva o que já existe.
+    for (const [k, v] of Object.entries(existentes)) {
+      if (typeof v === "string") dados_tecnicos[k] = v;
+    }
   }
+  // Não validar obrigatoriedade de dados técnicos aqui — isso é feito em salvarDadosTecnicos.
+  // O formulário de dados base apenas preserva o que já existe.
 
   const crit = texto(input.criticidade, 20);
   const prio = texto(input.prioridade_padrao, 20);
@@ -364,7 +379,8 @@ export async function salvarDadosTecnicos(input: {
   const dados_tecnicos: Record<string, string> = {};
   const entradas = Object.entries(input.dados_tecnicos ?? {}).slice(0, 50);
   for (const a of atributos) {
-    const v = (entradas.find(([k]) => k === a.nome)?.[1] ?? "").trim().slice(0, 200);
+    const raw = (entradas.find(([k]) => k === a.nome)?.[1] ?? "").trim();
+    const v = a.tipo === "texto" ? raw : raw.slice(0, 200);
     if (a.obrigatorio && v === "") {
       return { ok: false, error: `Atributo obrigatório: ${a.nome}.` };
     }
