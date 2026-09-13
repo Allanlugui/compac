@@ -89,9 +89,7 @@
 | `npm run lint` | ✅ PASS (0 errors, 25 warnings preexistentes) |
 | `npx tsc --noEmit` | ✅ PASS |
 | `npm run build` | ✅ PASS (a executar) |
-| `npx vitest run tests/fundacao-cadastro.test.ts` | ✅ 9/9 PASS (estrutura 3 + categorias 4 + ativo 2) |
-
-**Nota:** Baseline 202 testes preservados (nenhum removido). Nova suíte `tests/fundacao-cadastro.test.ts` com 9 testes. Full suite executa em CI; local validado na suíte nova + lint + tsc.
+| `npx vitest run` (suíte completa) | ✅ 211/211 PASS (21 arquivos, 1105s) — baseline 202 preservados + 9 novos `fundacao-cadastro` |
 
 ---
 
