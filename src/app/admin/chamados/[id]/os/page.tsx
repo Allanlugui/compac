@@ -216,6 +216,12 @@ export default async function OsPage({ params }: OsPageProps) {
   const fotosDepois = Array.isArray(chamado.fotos_depois)
     ? chamado.fotos_depois
     : [];
+  const fotosAntesUrls = await Promise.all(
+    fotosAntes.map((p) => resolverFoto(p, ctx.orgId)),
+  );
+  const fotosDepoisUrls = await Promise.all(
+    fotosDepois.map((p) => resolverFoto(p, ctx.orgId)),
+  );
   const totalMateriais = compras.reduce(
     (soma, c) => soma + Number(c.valor_total ?? 0),
     0,
@@ -396,9 +402,9 @@ export default async function OsPage({ params }: OsPageProps) {
         )}
 
         {/* Fotos */}
-        <FotosOS titulo="5 · Fotos — antes" fotos={fotosAntes} />
+        <FotosOS titulo="5 · Fotos — antes" fotos={fotosAntesUrls} />
         <FotosOS titulo="6 · Fotos — durante" fotos={fotosDuranteUrls} />
-        <FotosOS titulo="7 · Fotos — depois" fotos={fotosDepois} />
+        <FotosOS titulo="7 · Fotos — depois" fotos={fotosDepoisUrls} />
 
         {/* Custos */}
         <section className="mt-6 break-inside-avoid">

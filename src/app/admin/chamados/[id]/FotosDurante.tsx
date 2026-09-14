@@ -11,12 +11,10 @@ import { adicionarFotosDurante } from "./actions";
 /** Fotos DURANTE a execução (câmera/galeria + metadados usuário/data). */
 export default function FotosDurante({
   chamadoId,
-  paths,
-  orgId,
+  urls,
 }: {
   chamadoId: string;
-  paths: string[];
-  orgId: string;
+  urls: string[];
 }) {
   const router = useRouter();
   const [enviando, setEnviando] = useState(false);
@@ -50,10 +48,9 @@ export default function FotosDurante({
   return (
     <div className="space-y-3">
       <GaleriaFotos
-        fotos={paths}
+        fotos={urls}
         legenda="Durante"
         vazio="Nenhuma foto do durante ainda."
-        orgId={orgId}
       />
       <FotoAnexoInput
         aoSelecionar={enviar}

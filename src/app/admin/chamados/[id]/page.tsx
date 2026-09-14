@@ -218,6 +218,12 @@ const [
   const fotosDepois = Array.isArray(chamado.fotos_depois)
     ? chamado.fotos_depois
     : [];
+  const fotosAntesUrls = await Promise.all(
+    fotosAntes.map((p) => resolverFoto(p, ctx.orgId)),
+  );
+  const fotosDepoisUrls = await Promise.all(
+    fotosDepois.map((p) => resolverFoto(p, ctx.orgId)),
+  );
   const fotosOs = (fotosData ?? []) as OsFoto[];
   const fotosDurante = fotosOs.filter((f) => f.categoria === "durante").map((f) => f.path);
   const duranteUrls = await Promise.all(
@@ -505,10 +511,9 @@ const totalMateriais = consumos.reduce(
             Fotos do problema (antes)
           </p>
           <GaleriaFotos
-            fotos={fotosAntes}
+            fotos={fotosAntesUrls}
             legenda="Antes"
             vazio="Nenhuma foto do problema enviada."
-            orgId={ctx.orgId}
           />
         </div>
       </Secao>
@@ -660,28 +665,32 @@ const totalMateriais = consumos.reduce(
           <div>
             <p className="mb-2 text-xs font-bold tracking-wide text-zinc-500 uppercase">Durante</p>
             {podeExecutar ? (
-              <FotosDurante chamadoId={chamado.id} paths={fotosDurante} orgId={ctx.orgId} />
+              <FotosDurante chamadoId={chamado.id} urls={duranteUrls} />
             ) : (
               <GaleriaFotos
-                fotos={fotosDurante}
+                fotos={duranteUrls}
                 legenda="Durante"
                 vazio="Nenhuma foto do durante ainda."
-                orgId={ctx.orgId}
               />
             )}
           </div>
           <div>
             <p className="mb-2 text-xs font-bold tracking-wide text-zinc-500 uppercase">Depois</p>
             <GaleriaFotos
-              fotos={fotosDepois}
+              fotos={fotosDepoisUrls}
               legenda="Depois"
               vazio="Nenhuma foto de conclusão enviada ainda."
-              orgId={ctx.orgId}
             />
             {podeExecutar && <FotosDepoisUpload chamadoId={chamado.id} />}
           </div>
           {duranteUrls.some((u) => u === "") && (
             <p className="text-xs text-zinc-400">Algumas fotos do durante não puderam ser resolvidas.</p>
+          )}
+          {fotosAntesUrls.some((u) => u === "") && (
+            <p className="text-xs text-zinc-400">Algumas fotos do antes não puderam ser resolvidas.</p>
+          )}
+          {fotosDepoisUrls.some((u) => u === "") && (
+            <p className="text-xs text-zinc-400">Algumas fotos do depois não puderam ser resolvidas.</p>
           )}
         </div>
       </Secao>

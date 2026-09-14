@@ -1,19 +1,17 @@
+"use client";
+
 import { Images } from "lucide-react";
-import { resolverFoto } from "@/lib/storage";
 
 interface GaleriaFotosProps {
+  /** URLs já resolvidas (signed URLs ou URLs públicas legadas). */
   fotos: string[];
   legenda: string;
   vazio?: string;
-  /** Org ativa: fotos de outra org são ocultadas (defesa em profundidade). */
-  orgId?: string;
 }
 
 /** Grade de fotos com link para a imagem original em nova aba. */
-export default async function GaleriaFotos({ fotos, legenda, vazio, orgId }: GaleriaFotosProps) {
-  const urls = (
-    await Promise.all(fotos.map((u) => resolverFoto(u, orgId)))
-  ).filter((u) => u !== "");
+export default function GaleriaFotos({ fotos, legenda, vazio }: GaleriaFotosProps) {
+  const urls = fotos.filter((u) => u !== "");
   if (urls.length === 0) {
     return (
       <div className="flex items-center gap-2 rounded-xl bg-zinc-50 px-4 py-3 text-sm text-zinc-500 ring-1 ring-zinc-200">
