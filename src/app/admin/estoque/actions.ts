@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
-import { exigirPermissao } from "@/lib/permissoes";
+import { exigirPermissaoEfetiva } from "@/lib/permissoes-custom-server";
 import { registrarLog } from "@/lib/auditoria";
 import { notificar } from "@/app/admin/notificacoes/actions";
 import type { TipoMovimentacao } from "@/lib/types";
@@ -22,6 +22,42 @@ function revalidar() {
   revalidatePath("/admin/dashboard");
 }
 
+type DbClient = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * BLOCO 2 — Chama a RPC com almoxarifado opcional (pós-v24) e recua para a
+ * chamada legada (9 args) se o banco ainda não tiver a v24 (PGRST202).
+ * Remove este fallback quando a v24 estiver aplicada em todos os ambientes.
+ */
+async function rpcMovimentar(
+  supabase: DbClient,
+  base: Record<string, string | number | boolean | null>,
+  almox: { origem?: string | null; destino?: string | null },
+) {
+  const tentativa = await supabase.rpc("movimentar_estoque_atomic", {
+    ...base,
+    p_almoxarifado: almox.origem ?? null,
+    p_almoxarifado_destino: almox.destino ?? null,
+  });
+  if (!tentativa.error) return tentativa;
+  const err = tentativa.error as { code?: string; message?: string };
+  if (err.code === "PGRST202" || /function/i.test(err.message ?? "")) {
+    return supabase.rpc("movimentar_estoque_atomic", base);
+  }
+  return tentativa;
+}
+
+/** Confirma que o almoxarifado pertence à org (segunda barreira além da RPC). */
+async function almoxDaOrg(supabase: DbClient, id: string, orgId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("almoxarifados")
+    .select("id")
+    .eq("id", id)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  return !!data;
+}
+
 /** Cadastra produto no estoque da org. */
 export async function criarProduto(input: {
   codigo: string;
@@ -37,9 +73,10 @@ export async function criarProduto(input: {
   pontoReposicao?: number;
   categoriaId?: string | null;
   fornecedorId?: string | null;
+  almoxarifadoId?: string | null;
 }): Promise<EstoqueResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "estoque.criar");
+  await exigirPermissaoEfetiva(ctx, "estoque.criar");
 
   const codigo = input.codigo.trim().toUpperCase();
   const descricao = input.descricao.trim();
@@ -66,6 +103,13 @@ export async function criarProduto(input: {
     if (!f) return { ok: false, error: "Fornecedor inválido." };
     fornecedor_id = input.fornecedorId;
   }
+  let almoxarifado_id: string | null = null;
+  if (input.almoxarifadoId) {
+    if (!(await almoxDaOrg(supabase, input.almoxarifadoId, ctx.orgId))) {
+      return { ok: false, error: "Almoxarifado inválido." };
+    }
+    almoxarifado_id = input.almoxarifadoId;
+  }
 
   const { data, error } = await supabase
     .from("produtos")
@@ -91,6 +135,8 @@ export async function criarProduto(input: {
       custo_medio: Number(input.custo) >= 0 ? Number(input.custo) : 0,
       ultimo_custo: Number(input.custo) >= 0 ? Number(input.custo) : 0,
       fornecedor_id,
+      // Omitido quando null: mantém o insert válido pré-v24 (sem a coluna).
+      ...(almoxarifado_id ? { almoxarifado_id } : {}),
     })
     .select("id")
     .single();
@@ -115,6 +161,8 @@ export interface MovimentarInput {
   custoUnitario: number;
   chamadoId: string;
   observacao: string;
+  /** BLOCO 2: opcional; NULL = legado/unificada. */
+  almoxarifadoId?: string | null;
 }
 
 /**
@@ -125,7 +173,9 @@ export interface MovimentarInput {
  */
 export async function movimentarEstoque(input: MovimentarInput): Promise<EstoqueResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, input.tipo === "ajuste" ? "estoque.ajustar" : "estoque.movimentar");
+  const permMov = (input.tipo === "ajuste" ? "estoque.ajustar" : "estoque.movimentar") as
+    | "estoque.ajustar"
+    | "estoque.movimentar";
 
   const quantidade = Number(input.quantidade);
   if (!input.produtoId) return { ok: false, error: "Produto inválido." };
@@ -139,17 +189,31 @@ export async function movimentarEstoque(input: MovimentarInput): Promise<Estoque
   const chamadoId = input.chamadoId.trim() !== "" ? input.chamadoId.trim() : null;
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("movimentar_estoque_atomic", {
-    p_produto: input.produtoId,
-    p_tipo: input.tipo,
-    p_qtd: quantidade,
-    p_custo: Number(input.custoUnitario) >= 0 ? Number(input.custoUnitario) : 0,
-    p_chamado: chamadoId,
-    p_obs: input.observacao.trim() === "" ? null : input.observacao.trim().slice(0, 500),
-    p_origem: null,
-    p_destino: null,
-    p_executado_por: ctx.email,
-  });
+  const almoxId = input.almoxarifadoId || null;
+  if (almoxId && !(await almoxDaOrg(supabase, almoxId, ctx.orgId))) {
+    return { ok: false, error: "Almoxarifado inválido." };
+  }
+  await exigirPermissaoEfetiva(
+    ctx,
+    permMov,
+    almoxId ? { tipo: "almoxarifado", id: almoxId } : null,
+    supabase,
+  );
+  const { data, error } = await rpcMovimentar(
+    supabase,
+    {
+      p_produto: input.produtoId,
+      p_tipo: input.tipo,
+      p_qtd: quantidade,
+      p_custo: Number(input.custoUnitario) >= 0 ? Number(input.custoUnitario) : 0,
+      p_chamado: chamadoId,
+      p_obs: input.observacao.trim() === "" ? null : input.observacao.trim().slice(0, 500),
+      p_origem: null,
+      p_destino: null,
+      p_executado_por: ctx.email,
+    },
+    { origem: almoxId },
+  );
   const r = (data ?? null) as {
     ok: boolean; error?: string; fisico?: number; reservado?: number;
     codigo?: string; minimo?: number;
@@ -173,6 +237,7 @@ export async function movimentarEstoque(input: MovimentarInput): Promise<Estoque
     dados_novos: {
       tipo: input.tipo, quantidade,
       novo_fisico: r.fisico, novo_reservado: r.reservado, chamado_id: chamadoId,
+      almoxarifado_id: almoxId,
     },
     executado_por: ctx.email,
     organization_id: ctx.orgId,
@@ -204,32 +269,66 @@ export async function transferirEstoque(input: {
   origem: string;
   destino: string;
   motivo?: string;
+  /** BLOCO 2: IDs reais (quando informados, os nomes são derivados e o par carrega o vínculo). */
+  origemId?: string | null;
+  destinoId?: string | null;
 }): Promise<EstoqueResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "estoque.transferir");
   if (!input.produtoId) return { ok: false, error: "Produto inválido." };
   const qtd = Number(input.quantidade);
   if (!Number.isFinite(qtd) || qtd <= 0) return { ok: false, error: "Quantidade inválida." };
-  const origem = (input.origem ?? "").trim().slice(0, 80);
-  const destino = (input.destino ?? "").trim().slice(0, 80);
+
+  const supabase = await createClient();
+  // Resolve IDs → nomes (auditoria em texto preservada) + valida mesma org.
+  let origem = (input.origem ?? "").trim().slice(0, 80);
+  let destino = (input.destino ?? "").trim().slice(0, 80);
+  const origemId = input.origemId || null;
+  const destinoId = input.destinoId || null;
+  if (origemId || destinoId) {
+    const ids = [origemId, destinoId].filter((x): x is string => !!x);
+    const { data: almoxs } = await supabase
+      .from("almoxarifados")
+      .select("id, nome")
+      .in("id", ids)
+      .eq("organization_id", ctx.orgId);
+    const mapa = new Map((almoxs ?? []).map((a) => [a.id as string, a.nome as string]));
+    if (origemId && !mapa.has(origemId)) return { ok: false, error: "Almoxarifado de origem inválido." };
+    if (destinoId && !mapa.has(destinoId)) return { ok: false, error: "Almoxarifado de destino inválido." };
+    if (origemId) origem = String(mapa.get(origemId)).slice(0, 80);
+    if (destinoId) destino = String(mapa.get(destinoId)).slice(0, 80);
+  }
   if (origem === "" || destino === "" || origem === destino) {
     return { ok: false, error: "Origem e destino distintos." };
+  }
+  // BLOCO 3: transferência exige acesso efetivo nos DOIS almoxarifados
+  // (quando identificados); legado textual usa checagem global.
+  await exigirPermissaoEfetiva(
+    ctx,
+    "estoque.transferir",
+    origemId ? { tipo: "almoxarifado", id: origemId } : null,
+    supabase,
+  );
+  if (destinoId) {
+    await exigirPermissaoEfetiva(ctx, "estoque.transferir", { tipo: "almoxarifado", id: destinoId }, supabase);
   }
   const motivo = (input.motivo ?? "").trim().slice(0, 200) || null;
   const marca = `Transferencia ${origem} -> ${destino}`;
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("movimentar_estoque_atomic", {
-    p_produto: input.produtoId,
-    p_tipo: "transferencia",
-    p_qtd: qtd,
-    p_custo: 0,
-    p_chamado: null,
-    p_obs: motivo ?? marca,
-    p_origem: origem,
-    p_destino: destino,
-    p_executado_por: ctx.email,
-  });
+  const { data, error } = await rpcMovimentar(
+    supabase,
+    {
+      p_produto: input.produtoId,
+      p_tipo: "transferencia",
+      p_qtd: qtd,
+      p_custo: 0,
+      p_chamado: null,
+      p_obs: motivo ?? marca,
+      p_origem: origem,
+      p_destino: destino,
+      p_executado_por: ctx.email,
+    },
+    { origem: origemId, destino: destinoId },
+  );
   const r = (data ?? null) as { ok: boolean; error?: string } | null;
   if (error || !r || r.ok !== true) {
     return { ok: false, error: r?.error ?? "Não foi possível transferir." };
@@ -237,7 +336,7 @@ export async function transferirEstoque(input: {
 
   await registrarLog(supabase, {
     tabela: "movimentacoes_estoque", registro_id: input.produtoId, acao: "STOCK_TRANSFERRED",
-    dados_anteriores: null, dados_novos: { origem, destino, quantidade: qtd, motivo },
+    dados_anteriores: null, dados_novos: { origem, destino, quantidade: qtd, motivo, origem_id: origemId, destino_id: destinoId },
     executado_por: ctx.email, organization_id: ctx.orgId, user_id: ctx.userId,
   });
   revalidar();
@@ -260,9 +359,10 @@ export async function atualizarProduto(input: {
   codigoFornecedor?: string;
   lote?: string;
   ativo: boolean;
+  almoxarifadoId?: string | null;
 }): Promise<EstoqueResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "estoque.editar");
+  await exigirPermissaoEfetiva(ctx, "estoque.editar");
   if (!input.id) return { ok: false, error: "Produto inválido." };
   const descricao = input.descricao.trim();
   if (descricao.length < 2 || descricao.length > 160) {
@@ -290,6 +390,14 @@ export async function atualizarProduto(input: {
     if (!f) return { ok: false, error: "Fornecedor inválido." };
     fornecedorId = input.fornecedorId;
   }
+  // undefined = não alterar (pré-v24 e fluxos sem almox); null = desvincular; id = vincular.
+  let almoxarifado_id: string | null | undefined;
+  if (input.almoxarifadoId !== undefined) {
+    if (input.almoxarifadoId && !(await almoxDaOrg(supabase, input.almoxarifadoId, ctx.orgId))) {
+      return { ok: false, error: "Almoxarifado inválido." };
+    }
+    almoxarifado_id = input.almoxarifadoId;
+  }
 
   const { error } = await supabase
     .from("produtos")
@@ -307,6 +415,7 @@ export async function atualizarProduto(input: {
       fornecedor_id: fornecedorId,
       codigo_fornecedor: norm(input.codigoFornecedor, 60),
       ativo: input.ativo,
+      ...(almoxarifado_id !== undefined ? { almoxarifado_id } : {}),
     })
     .eq("id", input.id)
     .eq("organization_id", ctx.orgId);
@@ -332,7 +441,7 @@ export async function vincularFornecedor(input: {
   prazoMedio?: number | null;
 }): Promise<EstoqueResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "estoque.editar");
+  await exigirPermissaoEfetiva(ctx, "estoque.editar");
 
   const supabase = await createClient();
   const [{ data: p }, { data: f }] = await Promise.all([
@@ -375,7 +484,7 @@ export async function desvincularFornecedor(input: {
   fornecedorId: string;
 }): Promise<EstoqueResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "estoque.editar");
+  await exigirPermissaoEfetiva(ctx, "estoque.editar");
 
   const supabase = await createClient();
   const { error } = await supabase
@@ -397,7 +506,7 @@ export async function desvincularFornecedor(input: {
 /** Cria unidade de medida da org. */
 export async function criarUnidade(input: { sigla: string; nome: string }): Promise<EstoqueResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "estoque.editar");
+  await exigirPermissaoEfetiva(ctx, "estoque.editar");
   const sigla = input.sigla.trim().toUpperCase().slice(0, 10);
   const nome = input.nome.trim().slice(0, 40);
   if (sigla === "" || nome === "") return { ok: false, error: "Sigla e nome." };
@@ -512,7 +621,7 @@ async function extrairDePdf(buffer: Buffer): Promise<NotaFiscalPreview | null> {
 
 export async function processarNotaFiscal(formData: FormData): Promise<{ ok: true; data: NotaFiscalPreview } | { ok: false; error: string }> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "estoque.movimentar");
+  await exigirPermissaoEfetiva(ctx, "estoque.movimentar");
   const file = formData.get("file") as File | null;
   if (!file) return { ok: false, error: "Arquivo não enviado." };
   if (file.size > 8 * 1024 * 1024) return { ok: false, error: "Arquivo muito grande (máx 8MB)." };
@@ -541,7 +650,7 @@ export async function processarNotaFiscal(formData: FormData): Promise<{ ok: tru
 
 export async function confirmarEntradaNotaFiscal(input: { itens: NotaFiscalPreview["itens"]; chave?: string; numero?: string }): Promise<EstoqueResult> {
   const ctx = await requireOrg();
-  exigirPermissao(ctx, "estoque.movimentar");
+  await exigirPermissaoEfetiva(ctx, "estoque.movimentar");
   if (!input.itens || input.itens.length === 0) return { ok: false, error: "Nenhum item." };
   if (input.itens.length > 120) return { ok: false, error: "Muitos itens (máx 120)." };
   const supabase = await createClient();

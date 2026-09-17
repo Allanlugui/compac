@@ -182,6 +182,13 @@ export const SECOES_NAV: SecaoNav[] = [
         papeis: ["ADMIN", "GESTOR"],
       },
       {
+        href: "/admin/cadastros",
+        rotulo: "Cadastros",
+        Icone: ClipboardCheck,
+        ativoEm: (p) => p.startsWith("/admin/cadastros"),
+        papeis: ["ADMIN", "GESTOR"],
+      },
+      {
         href: "/admin/usuarios",
         rotulo: "Usuários",
         Icone: Users,

@@ -3,7 +3,7 @@ import { Package } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
 import { exigirPermissao } from "@/lib/permissoes";
-import type { Movimentacao, Produto } from "@/lib/types";
+import type { Almoxarifado, Movimentacao, Produto } from "@/lib/types";
 import { formatarMoeda } from "@/lib/format";
 import PageHeader from "@/components/ui/PageHeader";
 import StatCard from "@/components/ui/StatCard";
@@ -16,7 +16,7 @@ export default async function EstoquePage() {
   const ctx = await requireOrg();
   exigirPermissao(ctx, "estoque.ver");
 
-  const [{ data: prods }, { data: movs }, { data: unis }, { data: cats }, { data: forns }] = await Promise.all([
+  const [{ data: prods }, { data: movs }, { data: unis }, { data: cats }, { data: forns }, { data: almoxs }] = await Promise.all([
     supabase
       .from("produtos")
       .select("*")
@@ -48,6 +48,13 @@ export default async function EstoquePage() {
       .eq("ativo", true)
       .order("nome")
       .limit(200),
+    // Pré-v24 a tabela não existe: erro tolerado, lista vazia (modo legado).
+    supabase
+      .from("almoxarifados")
+      .select("id, organization_id, nome, codigo, localidade_id, ativo, created_at")
+      .eq("organization_id", ctx.orgId)
+      .eq("ativo", true)
+      .order("nome", { ascending: true }),
   ]);
 
   const produtos = (prods ?? []) as Produto[];
@@ -81,6 +88,7 @@ export default async function EstoquePage() {
         unidades={(unis ?? []) as { sigla: string; nome: string }[]}
         categorias={(cats ?? []) as { id: string; nome: string }[]}
         fornecedores={(forns ?? []) as { id: string; nome: string }[]}
+        almoxarifados={(almoxs ?? []) as Almoxarifado[]}
       />
     </div>
   );

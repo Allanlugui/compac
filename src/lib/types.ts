@@ -251,6 +251,12 @@ export interface SolicitacaoCompleta extends SolicitacaoCompra {
   aprovado_por: string | null;
   aprovado_em: string | null;
   decisao_obs: string | null;
+  /** BLOCO 4 (schema_v26): origem e vínculos do QR (NULL = portal/manual/legado). */
+  qr_contexto_id: string | null;
+  localidade_id: string | null;
+  departamento_id: string | null;
+  centro_custo_id: string | null;
+  almoxarifado_id: string | null;
 }
 
 export interface SolicitacaoItem {
@@ -390,6 +396,11 @@ export interface QrContexto {
   token: string;
   ativo: boolean;
   created_at: string;
+  /** BLOCO 4 (schema_v26): vínculos relacionais (NULL = legado/texto). */
+  localidade_id: string | null;
+  departamento_id: string | null;
+  centro_custo_id: string | null;
+  almoxarifado_id: string | null;
 }
 
 export type AuditoriaAcao =
@@ -518,6 +529,8 @@ export interface Produto {
   codigo_fornecedor: string | null;
   /** FASE 1 (schema_v6): categoria estruturada — convive com `categoria` texto. */
   categoria_id: string | null;
+  /** BLOCO 2 (schema_v24): almoxarifado principal (NULL = sem vínculo). Saldo global segue em `estoque_atual`. */
+  almoxarifado_id: string | null;
 }
 
 export type TipoMovimentacao = "entrada" | "saida" | "ajuste" | "reserva" | "consumo" | "devolucao";
@@ -533,6 +546,33 @@ export interface Movimentacao {
   compra_id: string | null;
   observacao: string | null;
   executado_por: string;
+  created_at: string;
+  /** BLOCO 2 (schema_v24): almoxarifado da movimentação (NULL = legado). */
+  almoxarifado_id: string | null;
+}
+
+export interface Almoxarifado {
+  id: string;
+  organization_id: string;
+  nome: string;
+  codigo: string | null;
+  localidade_id: string | null;
+  ativo: boolean;
+  created_at: string;
+}
+
+export type EfeitoPermissao = "conceder" | "negar";
+
+export type EscopoPermissao = "global" | "localidade" | "almoxarifado";
+
+export interface PermissaoCustom {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  permissao: string;
+  efeito: EfeitoPermissao;
+  escopo_tipo: EscopoPermissao;
+  escopo_id: string | null;
   created_at: string;
 }
 
@@ -681,6 +721,27 @@ export interface Categoria {
   tipo: TipoCategoria;
   atributos: AtributoCategoria[];
   ativa: boolean;
+  created_at: string;
+}
+
+export interface DepartamentoSetor {
+  id: string;
+  organization_id: string;
+  nome: string;
+  sigla: string | null;
+  localidade_id: string | null;
+  ativo: boolean;
+  created_at: string;
+}
+
+export interface CentroCusto {
+  id: string;
+  organization_id: string;
+  codigo: string;
+  nome: string;
+  departamento_id: string | null;
+  localidade_id: string | null;
+  ativo: boolean;
   created_at: string;
 }
 

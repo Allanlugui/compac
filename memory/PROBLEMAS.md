@@ -12,7 +12,7 @@
 - **Ação restante:** suíte completa (20 arquivos) excede 10 min por exigir Supabase live sequencial — BLOQUEADO por janela de tempo, rodar por blocos (não impeditivo p/ merge). **VALIDADO (gates técnicos).**
 
 ### P-ABERTO-02 — `scripts/` com ~50 arquivos untracked
-- **Sintoma (2026-09-17):** `git status` limpo exceto untracked: `memory/` (4 arquivos, novo), `.obsidian/` (novo), `scripts/` (~50 `debug_*.js`, `fix_mojibake*`, `quick_test.js` etc.).
+- **Sintoma (2026-09-17):** `git status` limpo exceto untracked: `memory/` (4 arquivos, novo), `.obsidian/` (novo), `memory/.obsidian/` (novo — metadados do Obsidian dentro de `memory/`), `scripts/` (~50 `debug_*.js`, `fix_mojibake*`, `quick_test.js` etc.).
 - **Risco:** poluição, possível secret em script solto, ruído em `git add`.
 - **Ação:** triar `scripts/` (manter ferramenta útil documentada vs. deletar diagnóstico descartável); decidir se `memory/` entra no git (recomendado: sim) e se `.obsidian/` vai para `.gitignore`. Preservar por padrão até triagem.
 
@@ -23,7 +23,13 @@
 
 ### P-ABERTO-04 — `perfil/[id]` 404 (divergência de docs)
 - **Sintoma:** `ORPHAN_FEATURES.md` marcava `/admin/perfil/[id]` 404 CRÍTICO; `src/app/admin/perfil/[id]/` existe no disco; auditoria-360 alega P01 corrigido.
-- **Ação:** testar rota real + links do organograma. **NÃO VALIDADO.**
+- **Evidência 2026-09-17:** build lista `/admin/perfil/[id]` como rota válida (também `/admin/cadastros` nova). Conteúdo/links ainda NÃO VALIDADOS.
+- **Ação:** testar rota real + links do organograma. **PARCIALMENTE VALIDADO.**
+
+### P-ABERTO-05 — Migrations v23→v26 NÃO aplicadas (BLOQUEANTE p/ uso das telas novas)
+- **Sintoma:** `schema_v23.sql` + `v24` + `v25` + `v26` criados e versionados, mas tabelas/colunas não existem no Supabase até aplicação manual via SQL Editor (ordem: v23 → v24 → v25 → v26).
+- **Evidência 2026-09-17:** usuário aplicou com sucesso; probe somente-leitura confirma no banco live: 4 tabelas novas existem (0 linhas), 6 colunas novas presentes, RPC aceita 11 args (`Produto não encontrado` = assinatura nova válida).
+- **Ação restante:** validação manual das telas. **RESOLVIDO (schema).**
 
 ## 2. Limitações aceitas (não bloqueadores, com workaround)
 

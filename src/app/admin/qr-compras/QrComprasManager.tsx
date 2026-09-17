@@ -7,12 +7,26 @@ import { Check, Copy, LoaderCircle, Plus, Printer, Trash2, TriangleAlert } from 
 import type { QrContexto } from "@/lib/types";
 import { alternarContexto, criarContexto, excluirContexto } from "./actions";
 
+export interface OptRel {
+  id: string;
+  nome: string;
+  extra?: string;
+}
+
 export default function QrComprasManager({
   contextos,
   siteUrl,
+  locs,
+  deptos,
+  ccs,
+  almoxs,
 }: {
   contextos: QrContexto[];
   siteUrl: string;
+  locs: (OptRel & { tipo?: string })[];
+  deptos: OptRel[];
+  ccs: (OptRel & { codigo?: string })[];
+  almoxs: OptRel[];
 }) {
   const router = useRouter();
   const [nome, setNome] = useState("");
@@ -21,10 +35,24 @@ export default function QrComprasManager({
   const [area, setArea] = useState("");
   const [almoxarifado, setAlmoxarifado] = useState("");
   const [centro, setCentro] = useState("");
+  const [locId, setLocId] = useState("");
+  const [deptoId, setDeptoId] = useState("");
+  const [ccId, setCcId] = useState("");
+  const [almoxId, setAlmoxId] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [copiado, setCopiado] = useState<string | null>(null);
+
+  const temLocs = locs.length > 0;
+  const temDeptos = deptos.length > 0;
+  const temCcs = ccs.length > 0;
+  const temAlmoxs = almoxs.length > 0;
+
+  function nomeDe(lista: OptRel[], id: string | null): string | null {
+    if (!id) return null;
+    return lista.find((x) => x.id === id)?.nome ?? null;
+  }
 
   const origem =
     siteUrl !== "" ? siteUrl.replace(/\/+$/, "") : typeof window !== "undefined" ? window.location.origin : "";
@@ -41,9 +69,14 @@ export default function QrComprasManager({
     try {
       const r = await criarContexto({
         nome, unidade, setor, area, almoxarifado, centro_custo: centro,
+        localidadeId: locId || null,
+        departamentoId: deptoId || null,
+        centroCustoId: ccId || null,
+        almoxarifadoId: almoxId || null,
       });
       if (!r.ok) throw new Error(r.error);
       setNome(""); setUnidade(""); setSetor(""); setArea(""); setAlmoxarifado(""); setCentro("");
+      setLocId(""); setDeptoId(""); setCcId(""); setAlmoxId("");
       router.refresh();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Falha inesperada.");
@@ -105,11 +138,47 @@ export default function QrComprasManager({
         </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <input aria-label="Nome *" required minLength={2} maxLength={80} placeholder="Nome * (ex.: Almoxarifado Central)" value={nome} onChange={(e) => setNome(e.target.value)} disabled={salvando} className={campo} />
-          <input aria-label="Unidade" maxLength={80} placeholder="Unidade" value={unidade} onChange={(e) => setUnidade(e.target.value)} disabled={salvando} className={campo} />
-          <input aria-label="Setor" maxLength={80} placeholder="Setor" value={setor} onChange={(e) => setSetor(e.target.value)} disabled={salvando} className={campo} />
+          {temLocs ? (
+            <select aria-label="Localidade" value={locId} onChange={(e) => setLocId(e.target.value)} disabled={salvando} className={campo}>
+              <option value="">Localidade…</option>
+              {locs.map((l) => (
+                <option key={l.id} value={l.id}>{l.nome}{l.tipo ? ` · ${l.tipo}` : ""}</option>
+              ))}
+            </select>
+          ) : (
+            <input aria-label="Unidade" maxLength={80} placeholder="Unidade" value={unidade} onChange={(e) => setUnidade(e.target.value)} disabled={salvando} className={campo} />
+          )}
+          {temDeptos ? (
+            <select aria-label="Departamento" value={deptoId} onChange={(e) => setDeptoId(e.target.value)} disabled={salvando} className={campo}>
+              <option value="">Departamento…</option>
+              {deptos.map((d) => (
+                <option key={d.id} value={d.id}>{d.nome}</option>
+              ))}
+            </select>
+          ) : (
+            <input aria-label="Setor" maxLength={80} placeholder="Setor" value={setor} onChange={(e) => setSetor(e.target.value)} disabled={salvando} className={campo} />
+          )}
           <input aria-label="Área" maxLength={80} placeholder="Área" value={area} onChange={(e) => setArea(e.target.value)} disabled={salvando} className={campo} />
-          <input aria-label="Almoxarifado" maxLength={80} placeholder="Almoxarifado" value={almoxarifado} onChange={(e) => setAlmoxarifado(e.target.value)} disabled={salvando} className={campo} />
-          <input aria-label="Centro de custo" maxLength={80} placeholder="Centro de custo" value={centro} onChange={(e) => setCentro(e.target.value)} disabled={salvando} className={campo} />
+          {temAlmoxs ? (
+            <select aria-label="Almoxarifado" value={almoxId} onChange={(e) => setAlmoxId(e.target.value)} disabled={salvando} className={campo}>
+              <option value="">Almoxarifado…</option>
+              {almoxs.map((a) => (
+                <option key={a.id} value={a.id}>{a.nome}</option>
+              ))}
+            </select>
+          ) : (
+            <input aria-label="Almoxarifado" maxLength={80} placeholder="Almoxarifado" value={almoxarifado} onChange={(e) => setAlmoxarifado(e.target.value)} disabled={salvando} className={campo} />
+          )}
+          {temCcs ? (
+            <select aria-label="Centro de custo" value={ccId} onChange={(e) => setCcId(e.target.value)} disabled={salvando} className={campo}>
+              <option value="">Centro de custo…</option>
+              {ccs.map((c) => (
+                <option key={c.id} value={c.id}>{c.codigo ? `${c.codigo} — ${c.nome}` : c.nome}</option>
+              ))}
+            </select>
+          ) : (
+            <input aria-label="Centro de custo" maxLength={80} placeholder="Centro de custo" value={centro} onChange={(e) => setCentro(e.target.value)} disabled={salvando} className={campo} />
+          )}
         </div>
         <button type="submit" disabled={salvando} className="mt-3 inline-flex min-h-[44px] items-center gap-1.5 rounded-xl bg-zinc-900 px-6 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
           {salvando && <LoaderCircle className="size-4 animate-spin" />}
@@ -131,13 +200,20 @@ export default function QrComprasManager({
         <ul className="grid gap-3 sm:grid-cols-2">
           {contextos.map((c) => {
             const url = urlDe(c.token);
+            const vinculos = [
+              nomeDe(locs, c.localidade_id) ?? c.unidade,
+              nomeDe(deptos, c.departamento_id) ?? c.setor,
+              c.area,
+              nomeDe(almoxs, c.almoxarifado_id) ?? c.almoxarifado,
+              ccs.find((x) => x.id === c.centro_custo_id)?.nome ?? c.centro_custo,
+            ].filter(Boolean);
             return (
               <li key={c.id} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-black">{c.nome}</p>
                     <p className="truncate text-xs text-zinc-500">
-                      {[c.unidade, c.setor, c.area].filter(Boolean).join(" · ") || "Contexto geral"}
+                      {vinculos.join(" · ") || "Contexto geral"}
                     </p>
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-black ring-1 ${c.ativo ? "bg-emerald-100 text-emerald-800 ring-emerald-200" : "bg-zinc-200 text-zinc-500 ring-zinc-300"}`}>

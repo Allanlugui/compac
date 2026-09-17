@@ -27,11 +27,25 @@ export default async function UsuariosPage() {
   }
 
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("memberships")
-    .select("user_id, role, status, setor, departamento, profiles!inner(nome, telefone, cargo, matricula, ultimo_acesso)")
-    .eq("organization_id", ctx.orgId)
-    .order("created_at", { ascending: true });
+  const [{ data }, { data: locs }, { data: almoxs }] = await Promise.all([
+    supabase
+      .from("memberships")
+      .select("user_id, role, status, setor, departamento, profiles!inner(nome, telefone, cargo, matricula, ultimo_acesso)")
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: true }),
+    // Pré-v23/v24: erro tolerado, listas vazias (editor mostra só global).
+    supabase
+      .from("localidades")
+      .select("id, nome")
+      .eq("organization_id", ctx.orgId)
+      .order("nome", { ascending: true }),
+    supabase
+      .from("almoxarifados")
+      .select("id, nome")
+      .eq("organization_id", ctx.orgId)
+      .eq("ativo", true)
+      .order("nome", { ascending: true }),
+  ]);
 
   const membros = ((data ?? []) as unknown as {
     user_id: string;
@@ -59,7 +73,11 @@ export default async function UsuariosPage() {
         titulo="Usuários"
         descricao={`${ctx.orgNome} · convites, perfis e acesso.`}
       />
-      <MembrosManager iniciais={membros} />
+      <MembrosManager
+        iniciais={membros}
+        locs={((locs ?? []) as { id: string; nome: string }[])}
+        almoxs={((almoxs ?? []) as { id: string; nome: string }[])}
+      />
     </div>
   );
 }

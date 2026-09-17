@@ -1,7 +1,49 @@
 # TODO.md — SGA-M (COMPAC)
 
-> Atualizado: 2026-09-17 (inspeção, sem execução de testes/build nesta sessão).
+> Atualizado: 2026-09-17 — BLOCO 4 implementado (migration v26 + QR relacional + gates PASS).
 > Regra: não manter como pendente o que já foi concluído; marcar estado real (PLANEJADO / IMPLEMENTADO / VALIDADO / BLOQUEADO / NÃO VALIDADO).
+
+## -3. BLOCO 4 — QR compras relacional (branch `fix/os-foto-antes-bug`)
+
+- [x] IMPLEMENTADO: `schema_v26.sql` — `qr_contextos` + `solicitacoes_compra` com FKs (localidade/depto/CC/almox) + `qr_contexto_id` + `enforce_same_org` estendido + `trg_org_qr_contextos`, idempotente
+- [x] IMPLEMENTADO: tipos (`QrContexto` + IDs, `SolicitacaoCompleta` + IDs) + `criarContexto` com seletores (snapshot textual derivado) + permissão efetiva `compras.criar` nas 3 actions
+- [x] IMPLEMENTADO: `/admin/qr-compras` com selects relacionais (fallback texto pré-v23/v24) + lista exibe vínculos resolvidos + fluxo público copia IDs + `qr_contexto_id` + `centro_custo` (com recuo legado pré-v26)
+- [x] IMPLEMENTADO: linha v26 em `MIGRATIONS_INVENTORY.md`
+- [x] VALIDADO 2026-09-17: `tsc` 0 errors; `lint` 0 errors + 24 warnings (pré-existentes); `build` SUCCESS 42 rotas íntegras
+- [x] APLICADO 2026-09-17: `schema_v23.sql` → `v24` → `v25` → `v26` no Supabase (usuário) + probe confirma tabelas/colunas/RPC
+- [ ] PLANEJADO: Preview + validação manual fim a fim (cadastros → almox → QR → solicitação → permissões)
+
+## -2. BLOCO 3 — Permissões customizáveis (branch `fix/os-foto-antes-bug`)
+
+- [x] IMPLEMENTADO: `schema_v25.sql` — `permissoes_custom` (conceder/negar + escopo global/localidade/almoxarifado) + RLS escrita só ADMIN + `enforce_same_org` estendido (membro ativo + escopo mesma org), idempotente
+- [x] IMPLEMENTADO: `src/lib/permissoes-custom.ts` (client-safe: catálogo, escopo, `temPermissaoEfetiva` pura) + `permissoes-custom-server.ts` (`exigirPermissaoEfetiva`) + tipos em `types.ts`
+- [x] IMPLEMENTADO: overlay aplicado em estoque (9 actions, escopo almox; transferência exige origem+destino) e cadastros (9 actions, escopo localidade); `usuarios.administrar` fora do modelo (anti-escalada)
+- [x] IMPLEMENTADO: `PermissoesEditor` em `/admin/usuarios` (listar/definir/remover por membro, chips + form por módulo) + linha v25 em `MIGRATIONS_INVENTORY.md`
+- [x] VALIDADO 2026-09-17: `tsc` 0 errors; `lint` 0 errors + 24 warnings (pré-existentes); `build` SUCCESS 42 rotas íntegras (após split client-safe/server do helper — Turbopack não aceita `next/headers` no bundle client)
+- [x] APLICADO 2026-09-17: `schema_v23.sql` + `v24` + `v25` via SQL Editor (usuário) — ver P-ABERTO-05
+- [ ] PLANEJADO: Preview + validação manual (conceder estoque.movimentar a SOLICITANTE restrito a 1 almox → movimentar dentro/fora; negar global → bloqueio; remover → volta ao perfil)
+- [ ] PLANEJADO (rollout gradual): demais módulos (ativos, chamados, compras, etc.) ainda usam `exigirPermissao` por perfil — migrar por módulo nas próximas fases
+
+## -1. BLOCO 2 — Almoxarifados + estoque dual (branch `fix/os-foto-antes-bug`)
+
+- [x] IMPLEMENTADO: `schema_v24.sql` — `almoxarifados` (FK `localidades`) + `produtos.almoxarifado_id` + `movimentacoes_estoque.almoxarifado_id` (nullable) + RPC com `p_almoxarifado`/`p_almoxarifado_destino` opcionais + RLS + `enforce_same_org` estendido, idempotente
+- [x] IMPLEMENTADO: `src/lib/types.ts` — `Almoxarifado` + `almoxarifado_id` em `Produto`/`Movimentacao`
+- [x] IMPLEMENTADO: aba "Almoxarifados" em `/admin/cadastros` (CRUD + vínculo localidade + bloqueio de exclusão com vínculo)
+- [x] IMPLEMENTADO: `/admin/estoque` dual — filtro Visão Unificada (todos) / Segmentada (por almox), stats do segmento, vínculo no cadastro/edição/movimentação, transferência por selects, coluna Local exibe almox
+- [x] IMPLEMENTADO: shim PGRST202 em `movimentarEstoque`/`transferirEstoque` (recuo legado pré-v24) + linha v24 em `MIGRATIONS_INVENTORY.md`
+- [x] VALIDADO 2026-09-17: `tsc` 0 errors; `lint` 0 errors + 24 warnings (pré-existentes, nenhum em arquivo novo); `build` SUCCESS 42 rotas íntegras
+- [x] APLICADO 2026-09-17: `schema_v23.sql` + `schema_v24.sql` via SQL Editor (usuário) — ver P-ABERTO-05
+- [ ] PLANEJADO: Preview + validação manual (criar almox → vincular produto → movimentar segmentado → transferir entre almox → conferir par auditado)
+
+## 0. BLOCO 1 — Cadastros mestres (branch `fix/os-foto-antes-bug`)
+
+- [x] IMPLEMENTADO: `schema_v23.sql` — `departamentos_setores` + `centros_custo` (FK `localidades`), RLS, `enforce_same_org` estendido, idempotente
+- [x] IMPLEMENTADO: `src/lib/types.ts` — `DepartamentoSetor` + `CentroCusto`
+- [x] IMPLEMENTADO: `src/app/admin/cadastros/` (`actions.ts` CRUD + `page.tsx` + `CadastrosManager.tsx` abas) + item "Cadastros" no `SidebarNav` (ADMIN/GESTOR)
+- [x] IMPLEMENTADO: linha v23 em `MIGRATIONS_INVENTORY.md`
+- [x] VALIDADO 2026-09-17: `tsc` 0 errors; `lint` 0 errors + 24 warnings (pré-existentes, nenhum em arquivo novo); `build` SUCCESS 42 rotas (41 + `/admin/cadastros`)
+- [x] APLICADO 2026-09-17: `schema_v23.sql` via SQL Editor (usuário) — ver P-ABERTO-05
+- [ ] PLANEJADO: Preview + validação manual (criar depto → vincular localidade → criar CC → editar → excluir com vínculo bloqueado)
 
 ## 1. Fase atual — FASE 11.2 (branch `fix/os-foto-antes-bug`)
 

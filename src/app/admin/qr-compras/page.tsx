@@ -27,11 +27,37 @@ export default async function QrComprasPage() {
     );
   }
 
-  const { data } = await supabase
-    .from("qr_contextos")
-    .select("*")
-    .eq("organization_id", ctx.orgId)
-    .order("created_at", { ascending: false });
+  const [{ data }, { data: locs }, { data: deptos }, { data: ccs }, { data: almoxs }] = await Promise.all([
+    supabase
+      .from("qr_contextos")
+      .select("*")
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: false }),
+    // Pré-v23/v24: erro tolerado, selects caem para texto livre (legado).
+    supabase
+      .from("localidades")
+      .select("id, nome, tipo")
+      .eq("organization_id", ctx.orgId)
+      .order("nome", { ascending: true }),
+    supabase
+      .from("departamentos_setores")
+      .select("id, nome")
+      .eq("organization_id", ctx.orgId)
+      .eq("ativo", true)
+      .order("nome", { ascending: true }),
+    supabase
+      .from("centros_custo")
+      .select("id, codigo, nome")
+      .eq("organization_id", ctx.orgId)
+      .eq("ativo", true)
+      .order("codigo", { ascending: true }),
+    supabase
+      .from("almoxarifados")
+      .select("id, nome")
+      .eq("organization_id", ctx.orgId)
+      .eq("ativo", true)
+      .order("nome", { ascending: true }),
+  ]);
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "").trim();
 
   return (
@@ -40,7 +66,14 @@ export default async function QrComprasPage() {
         titulo="QR de compras"
         descricao={`${ctx.orgNome} · um QR por unidade, setor ou almoxarifado.`}
       />
-      <QrComprasManager contextos={(data ?? []) as QrContexto[]} siteUrl={siteUrl} />
+      <QrComprasManager
+        contextos={(data ?? []) as QrContexto[]}
+        siteUrl={siteUrl}
+        locs={((locs ?? []) as { id: string; nome: string; tipo: string }[])}
+        deptos={((deptos ?? []) as { id: string; nome: string }[])}
+        ccs={((ccs ?? []) as { id: string; codigo: string; nome: string }[])}
+        almoxs={((almoxs ?? []) as { id: string; nome: string }[])}
+      />
     </div>
   );
 }

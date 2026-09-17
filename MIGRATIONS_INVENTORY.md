@@ -23,6 +23,10 @@
 | v16 | FASE 7 H1/H2 | Hardening RLS + índices | v1–v15 | Médio | ✅ Aplicada |
 | v17 | FASE 7 H4 | Hardening adicional | v1–v16 | Médio | ✅ Aplicada |
 | v18 | FASE 7.1 H1+H2 | `solicitacoes_compra.chamado_id` + `enforce_same_org` + `chamados.ativo_id RESTRICT` | v1–v17 | Médio | ✅ Aplicada |
+| v23 | BLOCO 1: cadastros mestres | `departamentos_setores` + `centros_custo` (FK localidades) + RLS + `enforce_same_org` estendido | v1–v22 | Baixo | 🆕 Criada, pendente aplicação |
+| v24 | BLOCO 2: almoxarifados + estoque dual | `almoxarifados` + `produtos.almoxarifado_id` + `movimentacoes_estoque.almoxarifado_id` + RPC com 2 params opcionais + `enforce_same_org` estendido | v1–v23 | Médio | 🆕 Criada, pendente aplicação |
+| v25 | BLOCO 3: permissões customizáveis | `permissoes_custom` (overlay conceder/negar + escopo) + RLS ADMIN + `enforce_same_org` estendido | v1–v24 | Médio | 🆕 Criada, pendente aplicação |
+| v26 | BLOCO 4: QR compras relacional | `qr_contextos` + `solicitacoes_compra` com FKs (localidade/depto/CC/almox) + `qr_contexto_id` + `enforce_same_org` estendido | v1–v25 | Baixo | 🆕 Criada, pendente aplicação |
 
 ---
 

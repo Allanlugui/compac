@@ -59,6 +59,13 @@ export async function criarSolicitacao(
   const svc = createServiceClient();
   // Token pode ser da org (genérico) ou de um contexto (unidade/setor).
   let orgId: string | null = null;
+  let contextoId: string | null = null;
+  let ctxSetor: string | null = null;
+  let ctxCentro: string | null = null;
+  let ctxLoc: string | null = null;
+  let ctxDepto: string | null = null;
+  let ctxCc: string | null = null;
+  let ctxAlmox: string | null = null;
   const { data: org } = await svc
     .from("organizations")
     .select("id, nome")
@@ -67,18 +74,47 @@ export async function criarSolicitacao(
   if (org) {
     orgId = org.id as string;
   } else {
-    const { data: context } = await svc
+    // Select completo (pós-v26) com recuo legado (pré-v26: colunas inexistentes).
+    const colunas = "id, organization_id, setor, centro_custo, localidade_id, departamento_id, centro_custo_id, almoxarifado_id, organizations!inner(nome)";
+    let context: unknown = null;
+    const tentativa = await svc
       .from("qr_contextos")
-      .select("organization_id, organizations!inner(nome)")
+      .select(colunas)
       .eq("token", input.tokenOrg)
       .eq("ativo", true)
       .maybeSingle();
+    if (!tentativa.error) {
+      context = tentativa.data;
+    } else {
+      const legado = await svc
+        .from("qr_contextos")
+        .select("id, organization_id, setor, centro_custo, organizations!inner(nome)")
+        .eq("token", input.tokenOrg)
+        .eq("ativo", true)
+        .maybeSingle();
+      context = legado.data ?? null;
+    }
     const c = context as unknown as {
+      id: string;
       organization_id: string;
+      setor: string | null;
+      centro_custo: string | null;
+      localidade_id: string | null;
+      departamento_id: string | null;
+      centro_custo_id: string | null;
+      almoxarifado_id: string | null;
       organizations: { nome: string };
     } | null;
     if (c) {
       orgId = c.organization_id;
+      contextoId = c.id ?? null;
+      ctxSetor = c.setor;
+      ctxCentro = c.centro_custo;
+      // Pré-v26: colunas inexistentes retornam undefined → null (legado).
+      ctxLoc = c.localidade_id ?? null;
+      ctxDepto = c.departamento_id ?? null;
+      ctxCc = c.centro_custo_id ?? null;
+      ctxAlmox = c.almoxarifado_id ?? null;
     }
   }
   if (!orgId) {
@@ -97,13 +133,20 @@ export async function criarSolicitacao(
       .insert({
         id,
         organization_id: orgId,
-        setor,
+        setor: contextoId && ctxSetor ? ctxSetor : setor,
         solicitante,
         item,
         quantidade,
         justificativa,
         valor_estimado: valorEstimado,
         qr_code_hash,
+        centro_custo: ctxCentro,
+        // Omitidos quando null: insert válido pré-v26.
+        ...(contextoId ? { qr_contexto_id: contextoId } : {}),
+        ...(ctxLoc ? { localidade_id: ctxLoc } : {}),
+        ...(ctxDepto ? { departamento_id: ctxDepto } : {}),
+        ...(ctxCc ? { centro_custo_id: ctxCc } : {}),
+        ...(ctxAlmox ? { almoxarifado_id: ctxAlmox } : {}),
       });
 
     if (error) {
@@ -148,7 +191,7 @@ export async function criarSolicitacao(
       registro_id: id,
       acao: "INSERT",
       dados_anteriores: null,
-      dados_novos: { setor, solicitante, item, quantidade, status: "pendente" },
+      dados_novos: { setor, solicitante, item, quantidade, status: "pendente", qr_contexto_id: contextoId, centro_custo: ctxCentro },
       executado_por: solicitante,
       organization_id: orgId,
     });

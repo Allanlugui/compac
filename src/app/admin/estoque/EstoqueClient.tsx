@@ -15,7 +15,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import type { Movimentacao, Produto, TipoMovimentacao } from "@/lib/types";
+import type { Almoxarifado, Movimentacao, Produto, TipoMovimentacao } from "@/lib/types";
 import { formatarDataHora, formatarMoeda } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
@@ -57,12 +57,14 @@ export default function EstoqueClient({
   unidades,
   categorias,
   fornecedores,
+  almoxarifados,
 }: {
   produtos: Produto[];
   movimentacoes: (Movimentacao & { produto_nome: string })[];
   unidades: { sigla: string; nome: string }[];
   categorias: Opt[];
   fornecedores: Opt[];
+  almoxarifados: Almoxarifado[];
 }) {
   const router = useRouter();
   const [aba, setAba] = useState<"produtos" | "movs" | "inventario" | "notas">("produtos");
@@ -71,6 +73,8 @@ export default function EstoqueClient({
   const [statusFiltro, setStatusFiltro] = useState<FiltroStatus>("todos");
   const [ordenacao, setOrdenacao] = useState<Ordenacao>("codigo_asc");
   const [erro, setErro] = useState<string | null>(null);
+  /** BLOCO 2 — "todos" = Visão Unificada (global); id = Visão Segmentada. */
+  const [visaoAlmox, setVisaoAlmox] = useState<string>("todos");
 
   // Ficha detalhada
   const [fichaId, setFichaId] = useState<string | null>(null);
@@ -88,6 +92,7 @@ export default function EstoqueClient({
   const [localNovo, setLocalNovo] = useState("");
   const [fornecedorNovoId, setFornecedorNovoId] = useState("");
   const [custoNovo, setCustoNovo] = useState("0");
+  const [almoxNovo, setAlmoxNovo] = useState("");
   const [salvandoProd, setSalvandoProd] = useState(false);
 
   // Edição
@@ -98,6 +103,7 @@ export default function EstoqueClient({
   const [editRep, setEditRep] = useState("0");
   const [editLoc, setEditLoc] = useState("");
   const [editAtivo, setEditAtivo] = useState(true);
+  const [editAlmox, setEditAlmox] = useState("");
   const [salvandoEdit, setSalvandoEdit] = useState(false);
   const [vincForn, setVincForn] = useState("");
   const [vincPrincipal, setVincPrincipal] = useState(false);
@@ -107,6 +113,7 @@ export default function EstoqueClient({
   const [movTipo, setMovTipo] = useState<TipoMovimentacao>("entrada");
   const [movQtd, setMovQtd] = useState("1");
   const [movMotivo, setMovMotivo] = useState("");
+  const [movAlmox, setMovAlmox] = useState("");
   const [salvandoMov, setSalvandoMov] = useState(false);
 
   // Transferência
@@ -114,6 +121,8 @@ export default function EstoqueClient({
   const [trQtd, setTrQtd] = useState("1");
   const [trOrigem, setTrOrigem] = useState("");
   const [trDestino, setTrDestino] = useState("");
+  const [trOrigemId, setTrOrigemId] = useState("");
+  const [trDestinoId, setTrDestinoId] = useState("");
   const [salvandoTr, setSalvandoTr] = useState(false);
 
   // Inventário
@@ -155,6 +164,7 @@ export default function EstoqueClient({
       );
     }
     if (categoriaFiltro) r = r.filter((p) => p.categoria_id === categoriaFiltro);
+    if (visaoAlmox !== "todos") r = r.filter((p) => (p.almoxarifado_id ?? null) === visaoAlmox);
     if (statusFiltro === "criticos") r = r.filter((p) => Number(p.estoque_atual ?? 0) - Number(p.estoque_reservado ?? 0) <= Number(p.estoque_minimo ?? 0));
     else if (statusFiltro === "reposicao") r = r.filter((p) => Number(p.estoque_atual ?? 0) - Number(p.estoque_reservado ?? 0) <= Number(p.ponto_reposicao ?? 0));
     else if (statusFiltro === "inativos") r = r.filter((p) => !p.ativo);
@@ -170,7 +180,22 @@ export default function EstoqueClient({
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
     return r;
-  }, [produtos, busca, categoriaFiltro, statusFiltro, ordenacao, categoriaNome]);
+  }, [produtos, busca, categoriaFiltro, statusFiltro, ordenacao, categoriaNome, visaoAlmox]);
+
+  const nomeAlmox = useMemo(() => {
+    const m = new Map(almoxarifados.map((a) => [a.id, a.nome]));
+    return (id: string | null | undefined) => (id ? m.get(id) ?? "—" : "—");
+  }, [almoxarifados]);
+
+  const movsFiltradas = useMemo(() => {
+    if (visaoAlmox === "todos") return movimentacoes;
+    return movimentacoes.filter((m) => (m.almoxarifado_id ?? null) === visaoAlmox);
+  }, [movimentacoes, visaoAlmox]);
+
+  const valorSegmento = useMemo(() => {
+    if (visaoAlmox === "todos") return null;
+    return filtrados.reduce((s, p) => s + Number(p.estoque_atual ?? 0) * Number(p.custo_medio ?? 0), 0);
+  }, [filtrados, visaoAlmox]);
 
   async function salvarProduto(e: React.FormEvent) {
     e.preventDefault();
@@ -182,9 +207,10 @@ export default function EstoqueClient({
         codigo, descricao, categoria: "", unidade,
         minimo: Number(minimo), maximo: null, localizacao: localNovo, custo: Number(custoNovo),
         sku, subcategoria, pontoReposicao: Number(reposicao), categoriaId: categoriaId || null, fornecedorId: fornecedorNovoId || null,
+        almoxarifadoId: almoxNovo || null,
       });
       if (!r.ok) throw new Error(r.error);
-      setCodigo(""); setDescricao(""); setSku(""); setMinimo("0"); setReposicao("0"); setCategoriaId(""); setSubcategoria(""); setLocalNovo(""); setFornecedorNovoId(""); setCustoNovo("0");
+      setCodigo(""); setDescricao(""); setSku(""); setMinimo("0"); setReposicao("0"); setCategoriaId(""); setSubcategoria(""); setLocalNovo(""); setFornecedorNovoId(""); setCustoNovo("0"); setAlmoxNovo("");
       router.refresh();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Falha inesperada.");
@@ -201,6 +227,7 @@ export default function EstoqueClient({
     setEditRep(String(p.ponto_reposicao ?? 0));
     setEditLoc(p.localizacao ?? "");
     setEditAtivo(p.ativo);
+    setEditAlmox(p.almoxarifado_id ?? "");
     setVincForn(p.fornecedor_id ?? "");
   }
 
@@ -214,6 +241,7 @@ export default function EstoqueClient({
         minimo: Number(editMin), maximo: editMax.trim() === "" ? null : Number(editMax),
         pontoReposicao: Number(editRep), localizacao: editLoc,
         unidade: "UN", categoria: "", fornecedorId: vincForn || null, ativo: editAtivo,
+        almoxarifadoId: almoxarifados.length > 0 ? editAlmox || null : undefined,
       });
       if (!r.ok) throw new Error(r.error);
       if (vincForn !== "") {
@@ -239,9 +267,10 @@ export default function EstoqueClient({
         produtoId: movProduto, tipo: movTipo,
         quantidade: Number(movQtd), custoUnitario: 0,
         chamadoId: "", observacao: movMotivo,
+        almoxarifadoId: movAlmox || null,
       });
       if (!r.ok) throw new Error(r.error);
-      setMovProduto(""); setMovQtd("1"); setMovMotivo("");
+      setMovProduto(""); setMovQtd("1"); setMovMotivo(""); setMovAlmox("");
       router.refresh();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Falha inesperada.");
@@ -258,9 +287,10 @@ export default function EstoqueClient({
     try {
       const r = await transferirEstoque({
         produtoId: trProduto, quantidade: Number(trQtd), origem: trOrigem, destino: trDestino,
+        origemId: trOrigemId || null, destinoId: trDestinoId || null,
       });
       if (!r.ok) throw new Error(r.error);
-      setTrProduto(""); setTrQtd("1"); setTrOrigem(""); setTrDestino("");
+      setTrProduto(""); setTrQtd("1"); setTrOrigem(""); setTrDestino(""); setTrOrigemId(""); setTrDestinoId("");
       router.refresh();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Falha inesperada.");
@@ -403,6 +433,14 @@ export default function EstoqueClient({
                   <option key={f.id} value={f.id}>{f.nome}</option>
                 ))}
               </select>
+              {almoxarifados.length > 0 && (
+                <select aria-label="Almoxarifado" value={almoxNovo} onChange={(e) => setAlmoxNovo(e.target.value)} disabled={salvandoProd} className={campo}>
+                  <option value="">Almoxarifado…</option>
+                  {almoxarifados.map((a) => (
+                    <option key={a.id} value={a.id}>{a.nome}</option>
+                  ))}
+                </select>
+              )}
               <input aria-label="Custo unit." type="number" min="0" step="0.01" placeholder="Custo R$ (ex: 2250,00)" value={custoNovo} onChange={(e) => setCustoNovo(e.target.value)} disabled={salvandoProd} className={campo} />
               <input aria-label="Estoque mínimo" type="number" min="0" step="0.01" placeholder="Mínimo (ex: 1)" value={minimo} onChange={(e) => setMinimo(e.target.value)} disabled={salvandoProd} className={campo} />
               <input aria-label="Ponto de reposição" type="number" min="0" step="0.01" placeholder="Reposição (ex: 2)" value={reposicao} onChange={(e) => setReposicao(e.target.value)} disabled={salvandoProd} className={campo} />
@@ -434,6 +472,14 @@ export default function EstoqueClient({
                   <option key={c.id} value={c.id}>{c.nome}</option>
                 ))}
               </select>
+              {almoxarifados.length > 0 && (
+                <select aria-label="Visão por almoxarifado" value={visaoAlmox} onChange={(e) => setVisaoAlmox(e.target.value)} className={`${campo} sm:col-span-3`}>
+                  <option value="todos">Visão unificada (todos)</option>
+                  {almoxarifados.map((a) => (
+                    <option key={a.id} value={a.id}>{a.nome}</option>
+                  ))}
+                </select>
+              )}
               <select aria-label="Filtrar status" value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value as FiltroStatus)} className={`${campo} sm:col-span-2`}>
                 <option value="todos">Todos status</option>
                 <option value="ativos">Ativos</option>
@@ -451,10 +497,10 @@ export default function EstoqueClient({
                   <option value="estoque_asc">Menor estoque</option>
                   <option value="atualizado_desc">Mais recentes</option>
                 </select>
-                <button type="button" onClick={() => { setBusca(""); setCategoriaFiltro(""); setStatusFiltro("todos"); setOrdenacao("codigo_asc"); }} className="rounded-lg border border-zinc-300 bg-white px-3 text-xs font-bold text-zinc-600 hover:bg-zinc-50">Limpar</button>
+                <button type="button" onClick={() => { setBusca(""); setCategoriaFiltro(""); setStatusFiltro("todos"); setOrdenacao("codigo_asc"); setVisaoAlmox("todos"); }} className="rounded-lg border border-zinc-300 bg-white px-3 text-xs font-bold text-zinc-600 hover:bg-zinc-50">Limpar</button>
               </div>
             </div>
-            <p className="mt-2 text-xs text-zinc-500">{filtrados.length} de {produtos.length} produtos · {filtrados.filter((p) => Number(p.estoque_atual ?? 0) - Number(p.estoque_reservado ?? 0) <= Number(p.estoque_minimo ?? 0)).length} críticos</p>
+            <p className="mt-2 text-xs text-zinc-500">{filtrados.length} de {produtos.length} produtos · {filtrados.filter((p) => Number(p.estoque_atual ?? 0) - Number(p.estoque_reservado ?? 0) <= Number(p.estoque_minimo ?? 0)).length} críticos{valorSegmento !== null && ` · valor no segmento ${formatarMoeda(valorSegmento)}`}</p>
           </div>
 
           {filtrados.length === 0 ? (
@@ -504,7 +550,10 @@ export default function EstoqueClient({
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums text-zinc-500">{fisico} / {reservado}</td>
                           <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums">{String(p.estoque_minimo)} / {String(p.ponto_reposicao)}</td>
-                          <td className="max-w-[140px] truncate px-3 py-2 text-xs" title={p.localizacao ?? ""}>{p.localizacao ?? "—"}</td>
+                          <td className="max-w-[140px] truncate px-3 py-2 text-xs" title={p.localizacao ?? ""}>
+                            <div>{p.localizacao ?? "—"}</div>
+                            {p.almoxarifado_id && <div className="text-[11px] font-bold text-zinc-500">{nomeAlmox(p.almoxarifado_id)}</div>}
+                          </td>
                           <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums">
                             <div>{formatarMoeda(Number(p.custo_medio ?? 0))}</div>
                             <div className="text-[11px] text-zinc-400">{formatarMoeda(fisico * Number(p.custo_medio ?? 0))}</div>
@@ -580,6 +629,17 @@ export default function EstoqueClient({
                             <input value={editLoc} onChange={(e) => setEditLoc(e.target.value)} maxLength={160} placeholder="Ex: Almox A — Prateleira 3" className={`${campo} mt-1`} />
                           </label>
                         </div>
+                        {almoxarifados.length > 0 && (
+                          <label className="block">
+                            <span className="text-xs font-bold text-zinc-700">Almoxarifado principal</span>
+                            <select value={editAlmox} onChange={(e) => setEditAlmox(e.target.value)} className={`${campo} mt-1`}>
+                              <option value="">— Sem vínculo —</option>
+                              {almoxarifados.map((a) => (
+                                <option key={a.id} value={a.id}>{a.nome}</option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
                         <label className="block">
                           <span className="text-xs font-bold text-zinc-700">Fornecedor</span>
                           <select value={vincForn} onChange={(e) => setVincForn(e.target.value)} className={`${campo} mt-1`}>
@@ -681,7 +741,7 @@ export default function EstoqueClient({
           <form onSubmit={salvarMov} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <h3 className="text-sm font-black">Registrar movimentação</h3>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-              <select aria-label="Produto" required value={movProduto} onChange={(e) => setMovProduto(e.target.value)} disabled={salvandoMov} className={campo}>
+              <select aria-label="Produto" required value={movProduto} onChange={(e) => { setMovProduto(e.target.value); const p = produtos.find((x) => x.id === e.target.value); if (p?.almoxarifado_id) setMovAlmox(p.almoxarifado_id); }} disabled={salvandoMov} className={campo}>
                 <option value="">Produto…</option>
                 {produtos.map((p) => (
                   <option key={p.id} value={p.id}>{p.codigo} — {p.descricao}</option>
@@ -694,11 +754,26 @@ export default function EstoqueClient({
               </select>
               <input aria-label="Quantidade" type="number" required min="0" step="0.01" value={movQtd} onChange={(e) => setMovQtd(e.target.value)} disabled={salvandoMov} className={campo} />
               <input aria-label="Motivo" maxLength={200} placeholder="Motivo" value={movMotivo} onChange={(e) => setMovMotivo(e.target.value)} disabled={salvandoMov} className={campo} />
-              <button type="submit" disabled={salvandoMov} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
+              {almoxarifados.length > 0 ? (
+                <select aria-label="Almoxarifado" value={movAlmox} onChange={(e) => setMovAlmox(e.target.value)} disabled={salvandoMov} className={campo}>
+                  <option value="">Almoxarifado…</option>
+                  {almoxarifados.map((a) => (
+                    <option key={a.id} value={a.id}>{a.nome}</option>
+                  ))}
+                </select>
+              ) : (
+                <button type="submit" disabled={salvandoMov} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
+                  {salvandoMov && <LoaderCircle className="size-4 animate-spin" />}
+                  Movimentar
+                </button>
+              )}
+            </div>
+            {almoxarifados.length > 0 && (
+              <button type="submit" disabled={salvandoMov} className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-6 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
                 {salvandoMov && <LoaderCircle className="size-4 animate-spin" />}
                 Movimentar
               </button>
-            </div>
+            )}
           </form>
 
           <form onSubmit={salvarTransferencia} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -711,8 +786,27 @@ export default function EstoqueClient({
                 ))}
               </select>
               <input aria-label="Quantidade" type="number" required min="0" step="0.01" value={trQtd} onChange={(e) => setTrQtd(e.target.value)} disabled={salvandoTr} className={campo} />
-              <input aria-label="Origem" required maxLength={80} placeholder="Origem (Almox A)" value={trOrigem} onChange={(e) => setTrOrigem(e.target.value)} disabled={salvandoTr} className={campo} />
-              <input aria-label="Destino" required maxLength={80} placeholder="Destino (Almox B)" value={trDestino} onChange={(e) => setTrDestino(e.target.value)} disabled={salvandoTr} className={campo} />
+              {almoxarifados.length > 0 ? (
+                <>
+                  <select aria-label="Origem" required value={trOrigemId} onChange={(e) => setTrOrigemId(e.target.value)} disabled={salvandoTr} className={campo}>
+                    <option value="">Origem…</option>
+                    {almoxarifados.map((a) => (
+                      <option key={a.id} value={a.id}>{a.nome}</option>
+                    ))}
+                  </select>
+                  <select aria-label="Destino" required value={trDestinoId} onChange={(e) => setTrDestinoId(e.target.value)} disabled={salvandoTr} className={campo}>
+                    <option value="">Destino…</option>
+                    {almoxarifados.map((a) => (
+                      <option key={a.id} value={a.id}>{a.nome}</option>
+                    ))}
+                  </select>
+                </>
+              ) : (
+                <>
+                  <input aria-label="Origem" required maxLength={80} placeholder="Origem (Almox A)" value={trOrigem} onChange={(e) => setTrOrigem(e.target.value)} disabled={salvandoTr} className={campo} />
+                  <input aria-label="Destino" required maxLength={80} placeholder="Destino (Almox B)" value={trDestino} onChange={(e) => setTrDestino(e.target.value)} disabled={salvandoTr} className={campo} />
+                </>
+              )}
               <button type="submit" disabled={salvandoTr} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-60">
                 {salvandoTr && <LoaderCircle className="size-4 animate-spin" />}
                 Transferir
@@ -720,11 +814,11 @@ export default function EstoqueClient({
             </div>
           </form>
 
-          {movimentacoes.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500">Nenhuma movimentação registrada.</p>
+          {movsFiltradas.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500">Nenhuma movimentação registrada{visaoAlmox !== "todos" ? " neste almoxarifado" : ""}.</p>
           ) : (
             <ul className="space-y-2">
-              {movimentacoes.map((m) => (
+              {movsFiltradas.map((m) => (
                 <li key={m.id} className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm shadow-sm">
                   {["entrada", "devolucao"].includes(m.tipo) ? (
                     <ArrowDownToLine className="size-4 shrink-0 text-emerald-600" />
@@ -736,6 +830,7 @@ export default function EstoqueClient({
                     <p className="text-xs text-zinc-500">
                       {m.tipo} · {formatarDataHora(m.created_at)} · {m.executado_por}
                       {(m as { origem?: string | null }).origem ? ` · ${(m as { origem?: string | null }).origem} → ${(m as { destino?: string | null }).destino}` : ""}
+                      {m.almoxarifado_id ? ` · ${nomeAlmox(m.almoxarifado_id)}` : ""}
                     </p>
                   </div>
                   <p className="font-black tabular-nums">

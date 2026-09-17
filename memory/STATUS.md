@@ -2,7 +2,7 @@
 
 > Fonte de contexto operacional. Precedência: código executado > config real > testes > docs > memória histórica.
 > Regras aplicadas: `F:/dev/memory/regras-agente.md` (Preservação, Auto-Gravação, Execução Contínua) + `F:/dev/memory/padroes-codigo.md`.
-> Última atualização: 2026-09-17 — FASE 11.2 validação técnica FECHADA (tsc/lint/vitest parcial/build PASS). `memory/` (4 arquivos) em stage; `src/app/admin/chamados/` sem novidades (fix já commitado em `fbbad15`).
+> Última atualização: 2026-09-17 — Migrations v23→v26 APLICADAS e verificadas no banco live (4 tabelas, 6 colunas, RPC 11 args). Falta validação manual das telas. Commit `bf9dec8` com `memory/` (4 arquivos) + push para `origin/fix/os-foto-antes-bug` em 2026-09-17; `src/app/admin/chamados/` sem novidades (fix já estava em `fbbad15`).
 
 ## 1. Estado atual
 
@@ -30,7 +30,37 @@
 - **Segurança:** `requireOrg()` → `ctx.orgId` (JWT, nunca do cliente) + RLS `eh_membro`/`tem_papel` (36 tabelas, ~75 policies) + trigger `enforce_same_org` + Storage `manutencao-midia` PRIVATE (`o/{orgId}/...`, 3 policies `midia_*`).
 - **Quality gates doc (QA_FINAL 2026-09-11):** `202/202` testes PASS, `lint 0 errors`, `tsc 0`, `build` PASS.
 
-## 3. FASE 11.2 — IMPLEMENTADO + VALIDADO em branch (não em produção)
+## 3. BLOCO 4 — QR compras relacional (IMPLEMENTADO 2026-09-17, migration pendente)
+
+- **Tabelas (schema_v26.sql, não aplicado):** `qr_contextos` + `solicitacoes_compra` com FKs (localidade/departamento/CC/almox) + `qr_contexto_id` na solicitação. Textos legados viram snapshot. Trigger novo `trg_org_qr_contextos`; blocos novos pegam carona em `trg_org_solic_chamado`.
+- **Telas:** `/admin/qr-compras` com selects (localidade/depto/CC/almox) e fallback texto pré-v23/v24; lista resolve nomes; fluxo público copia vínculos + centro para a solicitação (com recuo legado pré-v26).
+- **Permissões:** 3 actions com `compras.criar` efetiva (Bloco 3, global).
+- **Gates:** `tsc` 0, `lint` 0 errors + 24 warnings pré-existentes, `build` SUCCESS 42 rotas.
+
+## 4. BLOCO 3 — Permissões customizáveis (IMPLEMENTADO 2026-09-17, migration pendente)
+
+- **Tabela (schema_v25.sql, não aplicado):** `permissoes_custom` (user + permissão + `conceder`/`negar` + escopo global/localidade/almoxarifado). RLS escrita só ADMIN; trigger valida membro ativo + escopo mesma org. Sem linhas = 100% comportamento atual.
+- **Efetiva:** `temPermissaoEfetiva` pura (negar global vence tudo; negar escopado vence no escopo; conceder adiciona) + `exigirPermissaoEfetiva` servidor. Módulo dividido client-safe/server (Turbopack não aceita `next/headers` no bundle client).
+- **Aplicado em:** 9 actions estoque (escopo almox; transferência exige origem+destino) + 9 actions cadastros (escopo localidade). Demais módulos seguem por perfil (rollout gradual).
+- **Editor:** `/admin/usuarios` → expansível por membro (chips existentes + form por módulo). `usuarios.administrar` fora do modelo.
+- **Gates:** `tsc` 0, `lint` 0 errors + 24 warnings pré-existentes, `build` SUCCESS 42 rotas.
+
+## 4. BLOCO 2 — Almoxarifados + estoque dual (IMPLEMENTADO 2026-09-17, migration pendente)
+
+- **Tabelas (schema_v24.sql, não aplicado):** `almoxarifados` (nome unique/org, código, `localidade_id` SET NULL, ativo) + `produtos.almoxarifado_id` + `movimentacoes_estoque.almoxarifado_id` (nullable = legado). RLS `eh_membro` + write ADMIN/GESTOR; `enforce_same_org` estendido; triggers `trg_org_almoxarifados` + `trg_org_produtos` (novo; `trg_org_mov` existente cobre movs).
+- **RPC:** `movimentar_estoque_atomic` ganha `p_almoxarifado`/`p_almoxarifado_destino` DEFAULT NULL (DROP+CREATE corpo idêntico); par transferência carrega origem na saída e destino na entrada. Chamadas 9 args (testes) seguem válidas.
+- **Telas:** aba "Almoxarifados" em `/admin/cadastros`; `/admin/estoque` com seletor Visão Unificada/Segmentada, stats do segmento, vínculo no produto/movimentação/transferência (selects quando há almox, texto legado senão).
+- **Compatibilidade:** saldo global segue em `estoque_atual`; shim PGRST202 recua ao legado pré-v24; colunas omitidas quando null. Zero breaking change.
+- **Gates:** `tsc` 0, `lint` 0 errors + 24 warnings pré-existentes, `build` SUCCESS 42 rotas.
+
+## 4. BLOCO 1 — Cadastros mestres (IMPLEMENTADO 2026-09-17, migration pendente)
+
+- **Tabelas (schema_v23.sql, não aplicado):** `departamentos_setores` (nome unique/org, sigla, `localidade_id` SET NULL, ativo) + `centros_custo` (código unique/org, nome, `departamento_id`/`localidade_id` SET NULL, ativo). RLS `eh_membro` + write ADMIN/GESTOR; `enforce_same_org` estendido (3 blocos).
+- **Telas:** `/admin/cadastros` (Server + `CadastrosManager` abas Departamentos | Centros, CRUD completo, selects de localidade/departamento, bloqueio de exclusão com vínculo). Item "Cadastros" no sidebar Administração (ADMIN/GESTOR). Permissões reutilizadas `estrutura.ver/escrever`.
+- **Compatibilidade:** colunas texto legadas (`centro_custo`, `departamento`, `setor`) intactas — zero breaking change.
+- **Gates:** `tsc` 0, `lint` 0 errors + 24 warnings pré-existentes, `build` SUCCESS 42 rotas.
+
+## 4. FASE 11.2 — IMPLEMENTADO + VALIDADO em branch (não em produção)
 
 - **Bug:** `GaleriaFotos` (async Server Component) renderizado dentro de `FotosDurante` (Client Component) → hidratação quebrava, O.S. congelada após upload.
 - **Correção (cirúrgica, sem migration):** `GaleriaFotos.tsx` → `"use client"` síncrono recebendo `urls` resolvidas; `FotosDurante.tsx` prop `paths` → `urls`; `chamados/[id]/page.tsx` + `chamados/[id]/os/page.tsx` resolvem signed URLs (1h) no Server Component.

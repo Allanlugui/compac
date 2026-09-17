@@ -7,8 +7,12 @@ import { enviarSenhaProvisoria } from "@/lib/email";
 import { gerarSenhaProvisoria } from "@/lib/senhas";
 import { registrarLog } from "@/lib/auditoria";
 import { requireOrg } from "@/lib/org";
-import { exigirPermissao } from "@/lib/permissoes";
-import type { Role } from "@/lib/types";
+import { exigirPermissao, PERMISSOES } from "@/lib/permissoes";
+import {
+  PERMISSOES_BLOQUEADAS,
+  escopoDaPermissao,
+} from "@/lib/permissoes-custom";
+import type { EfeitoPermissao, EscopoPermissao, PermissaoCustom, Role } from "@/lib/types";
 
 export type UsuarioResult =
   | { ok: true; senhaProvisoria: string; emailEnviado: boolean }
@@ -348,6 +352,143 @@ export async function removerMembro(input: {
     acao: "MEMBERSHIP_CHANGE",
     dados_anteriores: alvo as unknown as Record<string, unknown>,
     dados_novos: { removido: true, organization_id: ctx.orgId },
+    executado_por: ctx.email,
+  });
+
+  revalidatePath("/admin/usuarios");
+  return { ok: true };
+}
+
+export type PermissaoResult = { ok: true } | { ok: false; error: string };
+
+export type PermissaoCustomRow = PermissaoCustom;
+
+/** Lista as customizações de um membro (ADMIN). Pré-v25 → []. */
+export async function listarPermissoesCustom(input: {
+  userId: string;
+}): Promise<{ ok: true; dados: PermissaoCustom[] } | { ok: false; error: string }> {
+  const ctx = await requireOrg();
+  exigirPermissao(ctx, "usuarios.administrar");
+  if (!input.userId) return { ok: false, error: "Membro inválido." };
+
+  const supabase = await createClient();
+  const { data: alvo } = await supabase
+    .from("memberships")
+    .select("user_id")
+    .eq("organization_id", ctx.orgId)
+    .eq("user_id", input.userId)
+    .maybeSingle();
+  if (!alvo) return { ok: false, error: "Membro não encontrado nesta organização." };
+
+  const { data, error } = await supabase
+    .from("permissoes_custom")
+    .select("id, organization_id, user_id, permissao, efeito, escopo_tipo, escopo_id, created_at")
+    .eq("organization_id", ctx.orgId)
+    .eq("user_id", input.userId);
+  if (error) {
+    // Pré-v25: tabela inexistente → sem customizações (legado).
+    return { ok: true, dados: [] };
+  }
+  return { ok: true, dados: (data ?? []) as unknown as PermissaoCustom[] };
+}
+
+/**
+ * Define ou remove customização (ADMIN).
+ * efeito null = remover (volta ao padrão do perfil).
+ * Anti-escalada: `usuarios.administrar` fora do modelo; alvo precisa
+ * ser membro ativo; escopo precisa pertencer à org.
+ */
+export async function definirPermissaoCustom(input: {
+  userId: string;
+  permissao: string;
+  efeito: EfeitoPermissao | null;
+  escopoTipo?: EscopoPermissao;
+  escopoId?: string | null;
+}): Promise<PermissaoResult> {
+  const ctx = await requireOrg();
+  exigirPermissao(ctx, "usuarios.administrar");
+  if (!input.userId) return { ok: false, error: "Membro inválido." };
+  if (!(input.permissao in PERMISSOES)) return { ok: false, error: "Permissão desconhecida." };
+  if ((PERMISSOES_BLOQUEADAS as readonly string[]).includes(input.permissao)) {
+    return { ok: false, error: "Esta permissão é exclusiva do perfil." };
+  }
+
+  const supabase = await createClient();
+  const { data: alvo } = await supabase
+    .from("memberships")
+    .select("user_id, status")
+    .eq("organization_id", ctx.orgId)
+    .eq("user_id", input.userId)
+    .maybeSingle();
+  if (!alvo || (alvo as { status: string }).status !== "ativo") {
+    return { ok: false, error: "Membro sem vínculo ativo." };
+  }
+
+  const escopoTipo: EscopoPermissao = input.escopoTipo ?? "global";
+  const escopoId = input.escopoId || null;
+  const esperado = escopoDaPermissao(input.permissao);
+  if (esperado === "global") {
+    if (escopoTipo !== "global" || escopoId) {
+      return { ok: false, error: "Esta permissão só aceita alcance global." };
+    }
+  } else if (escopoTipo !== "global" && escopoTipo !== esperado) {
+    return { ok: false, error: "Escopo incompatível com a permissão." };
+  } else if (escopoTipo !== "global" && !escopoId) {
+    return { ok: false, error: "Escopo exige vínculo." };
+  } else if (escopoTipo === "global" && escopoId) {
+    return { ok: false, error: "Alcance global não usa vínculo." };
+  }
+  if (escopoId) {
+    const tabela = escopoTipo === "localidade" ? "localidades" : "almoxarifados";
+    const { data: esc } = await supabase
+      .from(tabela)
+      .select("id")
+      .eq("id", escopoId)
+      .eq("organization_id", ctx.orgId)
+      .maybeSingle();
+    if (!esc) return { ok: false, error: "Escopo não encontrado." };
+  }
+
+  if (input.efeito === null) {
+    const { error } = await supabase
+      .from("permissoes_custom")
+      .delete()
+      .eq("organization_id", ctx.orgId)
+      .eq("user_id", input.userId)
+      .eq("permissao", input.permissao)
+      .eq("escopo_tipo", escopoTipo);
+    if (error) return { ok: false, error: "Não foi possível remover." };
+  } else {
+    // Substituição determinística (onConflict não enxerga NULL do escopo global):
+    // apaga a linha equivalente e insere a nova.
+    let del = supabase
+      .from("permissoes_custom")
+      .delete()
+      .eq("organization_id", ctx.orgId)
+      .eq("user_id", input.userId)
+      .eq("permissao", input.permissao)
+      .eq("escopo_tipo", escopoTipo);
+    del = escopoId ? del.eq("escopo_id", escopoId) : del.is("escopo_id", null);
+    const { error: eDel } = await del;
+    if (eDel) return { ok: false, error: "Não foi possível salvar." };
+    const { error } = await supabase.from("permissoes_custom").insert({
+      organization_id: ctx.orgId,
+      user_id: input.userId,
+      permissao: input.permissao,
+      efeito: input.efeito,
+      escopo_tipo: escopoTipo,
+      escopo_id: escopoId,
+      created_by: ctx.email,
+    });
+    if (error) return { ok: false, error: "Não foi possível salvar." };
+  }
+
+  await registrarLog(supabase, {
+    tabela: "permissoes_custom",
+    registro_id: input.userId,
+    acao: "MEMBERSHIP_CHANGE",
+    dados_anteriores: null,
+    dados_novos: { permissao: input.permissao, efeito: input.efeito, escopo_tipo: escopoTipo, escopo_id: escopoId },
     executado_por: ctx.email,
   });
 

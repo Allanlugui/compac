@@ -21,6 +21,7 @@ import {
   alternarStatusMembro,
   removerMembro,
 } from "./actions";
+import PermissoesEditor, { type OptEscopo } from "./PermissoesEditor";
 
 export interface Membro {
   user_id: string;
@@ -44,7 +45,15 @@ const ROLES: { id: Role; rotulo: string }[] = [
   { id: "SOLICITANTE", rotulo: "Solicitante — abrir/acompanhar" },
 ];
 
-export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
+export default function MembrosManager({
+  iniciais,
+  locs,
+  almoxs,
+}: {
+  iniciais: Membro[];
+  locs: OptEscopo[];
+  almoxs: OptEscopo[];
+}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [nome, setNome] = useState("");
@@ -360,6 +369,7 @@ export default function MembrosManager({ iniciais }: { iniciais: Membro[] }) {
                     </button>
                   </div>
                 )}
+                <PermissoesEditor userId={m.user_id} nome={m.nome} locs={locs} almoxs={almoxs} />
               </li>
             );
           })}

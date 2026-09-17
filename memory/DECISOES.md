@@ -53,3 +53,35 @@
 - TypeScript explícito, sem `any`; validação runtime manual (`norm()`, `Number()+isFinite`, sanitização `[%_,()"'\\;]` na busca) — `zod` avaliado, não adotado.
 - App Router: pages `/admin/*` async Server Components + Client Components só com `"use client"` justificado (`MapaClient`, `BuscaGlobal`, `EstoqueClient`).
 - Commits pequenos (`feat/fix/refactor/docs/test`); migrations idempotentes (`if not exists`/`or replace`); `vitest` com `fileParallelism:false` (evita `auth.users` eventual consistency).
+
+## 8. BLOCO 1 — Cadastros mestres relacionais (2026-09-17)
+
+- **Decisão:** criar `departamentos_setores` + `centros_custo` como tabelas próprias vinculadas a `localidades` (FK nullable SET NULL); manter colunas texto legadas intactas, sem migração de dados.
+- **Contexto:** departamento/centro de custo/setor eram texto livre (max 80) espalhados em 8+ pontos — sem unicidade, sem vínculo físico, sem RLS.
+- **Alternativas:** migrar colunas texto para FK imediatamente (rejeitado — risco de perda/quebra, viola Preservação); permissões novas `cadastros.*` (rejeitado — reutilizar `estrutura.*` reduz superfície); duas rotas separadas (rejeitado — uma rota com abas segue o padrão `EstruturaManager`).
+- **Impacto:** `schema_v23.sql` idempotente (tabelas + RLS + `enforce_same_org` estendido com corpo integral do v18 + 3 blocos); exclusão de departamento com CC vinculado é bloqueada com erro amigável; rota `/admin/cadastros` (ADMIN/GESTOR).
+- **Ref:** `schema_v23.sql`, `src/app/admin/cadastros/`.
+
+## 9. BLOCO 2 — Estoque dual + shim de compatibilidade RPC (2026-09-17)
+
+- **Decisão:** saldo GLOBAL permanece em `produtos.estoque_atual` (Visão Unificada = telas/relatórios atuais, zero quebra); segmentação via `almoxarifado_id` nullable (Visão Segmentada = filtro + stats do segmento). RPC estendida com 2 params DEFAULT NULL; código recua ao legado (PGRST202) pré-v24.
+- **Contexto:** transferência era par texto origem/destino ("rede zero, sem estoque por local"); px por almoxarifado exigiria saldos por par — fora do escopo. Dual nullable entrega o controle sem reescrever o motor.
+- **Alternativas:** saldos por almoxarifado (`estoque_saldos`) + RPC transacional nova (rejeitado — reescreve caminho crítico, invalida 5 testes workflows + RLS); assinatura RPC quebrada sem default (rejeitado — quebra testes e pré-v24); rota nova de almoxarifados (rejeitado — 3ª aba em `/admin/cadastros` segue o padrão).
+- **Impacto:** `schema_v24.sql` (DROP+CREATE da RPC corpo idêntico + 2 params); `transferirEstoque` usa selects quando há almox, texto senão; inserts omitem coluna quando null (válidos pré-v24). Remover o shim quando v24 aplicada em todos os ambientes.
+- **Ref:** `schema_v24.sql`, `src/app/admin/estoque/`.
+
+## 10. BLOCO 3 — Overlay granular sem reescrever a matriz (2026-09-17)
+
+- **Decisão:** `permissoes_custom` como OVERLAY (base perfil + conceder − negar; negar global vence tudo), aplicado primeiro em estoque (escopo almox) e cadastros (escopo localidade); `exigirPermissao` original intocado nos demais módulos (rollout gradual).
+- **Contexto:** trocar toda checagem de uma vez = reescrever caminho de segurança crítico com risco de lockout/bypass. `exigirPermissao` não podia virar async (call sites sem await = bypass silencioso).
+- **Alternativas:** reescrever todas as 18+ actions de uma vez (rejeitado — blast radius); `exigirPermissao` async (rejeitado — quebra silenciosa de segurança); escopos em tabela separada por tipo (rejeitado — uma tabela com check cobre); `usuarios.administrar` customizável (rejeitado — vetor de escalada).
+- **Impacto:** `schema_v25.sql`; `permissoes-custom.ts` client-safe + `permissoes-custom-server.ts` (split exigido pelo Turbopack: `next/headers` fora do bundle client); editor em `/admin/usuarios`; pré-v25 tudo degrada para legado (queries retornam []).
+- **Ref:** `schema_v25.sql`, `src/lib/permissoes-custom*.ts`, `src/app/admin/usuarios/PermissoesEditor.tsx`.
+
+## 11. BLOCO 4 — QR relacional com snapshot textual (2026-09-17)
+
+- **Decisão:** FKs novas convivem com textos (snapshot derivado dos vínculos no ato da criação); selects com fallback texto quando cadastros vazios; fluxo público copia IDs + `qr_contexto_id` com recuo legado.
+- **Contexto:** QRs já impressos e contextos antigos usam texto; quebrar o fluxo público seria P0. Snapshots mantêm etiquetas e auditoria legíveis sem join.
+- **Alternativas:** remover colunas texto (rejeitado — quebra QRs impressos e formulário antigo); exigir vínculos obrigatórios (rejeitado — orgs sem cadastros ficariam bloqueadas); migration de dados texto→FK por similaridade de nome (rejeitado — ambíguo, risco de vínculo errado).
+- **Impacto:** `schema_v26.sql`; `criarContexto` + fluxo público com spreads condicionais (válidos pré-v26); lista admin resolve nomes.
+- **Ref:** `schema_v26.sql`, `src/app/admin/qr-compras/`, `src/app/qr-compra/[hash]/actions.ts`.
