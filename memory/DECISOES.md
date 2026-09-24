@@ -1,7 +1,30 @@
 # DECISOES.md — SGA-M (COMPAC)
 
 > Registro cronológico, preservador (Antes → Motivo → Depois). Base: código + `ARCHITECTURE.md` + `SECURITY.md` + `QA_FINAL.md`.
-> Atualizado: 2026-09-17 (inspeção).
+> Atualizado: 2026-09-24 — FASE 0 RESET (`D-RESET-CLIENTE-01`).
+
+## 0. D-RESET-CLIENTE-01 — Reset arquitetural pós-feedback (2026-09-24, FASE 0)
+
+- **Decisão:** roadmap anterior SUSPENSO (vira histórico); feedback do cliente = nova fonte de verdade; produzir `REARQUITETURA-V2.md` antes de qualquer alteração estrutural; produção congelada; nenhum código nesta sessão.
+- **Contexto:** cliente rejeitou mensagens globais, organograma, busca-rota e formulário público como principal; exige atendimento conversacional, portal, Cadastros ampliado, Configurações, mobile por contexto.
+- **Mantido:** multi-tenant, RLS, auditoria, matriz+overlay de permissões, RPC estoque, QRs, todos os módulos §7 do protocolo.
+- **Removido (navegação, código/dados preservados):** mensagens global, organograma, rota de busca.
+- **Impacto:** TODO antigo arquivado por item; novas fases A–F em `REARQUITETURA-V2.md` §H; próxima fase exige decisão/aval antes de codar.
+- **Ref:** `memory/REARQUITETURA-V2.md`, protocolo FASE 0.
+
+## 00. D-FASEA-01 — Branch a partir da base real (2026-09-24, FASE A)
+
+- **Decisão:** `refactor/fundacao-arquitetura` criada de `a1eac3c` (não de master), pois master (`f8e0886` local; `efa6df6` remoto) não contém Blocos 1–4 nem `memory/`.
+- **Divergência corrigida:** `origin/master` = `efa6df6` (PR #1 mergeou FASE 11.2) — memória dizia "não mergeada". Produção segue NÃO VALIDADA.
+- **Ref:** ETAPA 1 FASE A.
+
+## 000. D-FASEA-02 — Fundação sem tabelas novas (2026-09-24, FASE A) + GATE FINAL
+
+- **Gate final:** suíte 216/216 (23 arquivos, 5 blocos), tsc 0, lint 0+24, build 43 rotas, push p/ Preview; ancestry documentada (sem rebase/merge); E2E local 15/15; commit `feat(FASE A): ...` AUTORIZADO e executado (sem merge/PR/deploy); FASE B bloqueada.
+
+- **Decisão:** dedup via helper testável (`.is()` p/ NULL) + `revalidatePath`; pipeline e-mail em código (log no recibo, `email_logs` fica p/ Fase B); hub Configurações só com links reais; Permissões seguem em `/admin/usuarios` (movimento conceitual via hub); Cadastros linka Usuários sem duplicar entidade.
+- **Auditoria permissões:** visibilidade tudo-ou-nada por página; custos visíveis a todo `estoque.ver`; escopo de registro = org (exceto overlay).
+- **Ref:** `src/lib/notificacoes.ts`, `src/lib/email-pipeline.ts`, `src/app/admin/configuracoes/`.
 
 ## 1. Multi-tenancy via JWT server-side (base do sistema)
 

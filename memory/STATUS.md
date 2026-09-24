@@ -2,7 +2,7 @@
 
 > Fonte de contexto operacional. Precedência: código executado > config real > testes > docs > memória histórica.
 > Regras aplicadas: `F:/dev/memory/regras-agente.md` (Preservação, Auto-Gravação, Execução Contínua) + `F:/dev/memory/padroes-codigo.md`.
-> Última atualização: 2026-09-17 — Migrations v23→v26 APLICADAS e verificadas no banco live (4 tabelas, 6 colunas, RPC 11 args). Falta validação manual das telas. Commit `bf9dec8` com `memory/` (4 arquivos) + push para `origin/fix/os-foto-antes-bug` em 2026-09-17; `src/app/admin/chamados/` sem novidades (fix já estava em `fbbad15`).
+> Última atualização: 2026-09-24 — FASE A: Preview com deploy Vercel SUCCESS (confirmado pelo usuário); validação manual/interativa PENDENTE; commit BLOQUEADO até "Preview validado". Ancestry confirmada (2 à frente/1 atrás, ancestral `fbbad15` — consequência do merge PR #1, não é problema). Produção congelada.
 
 ## 1. Estado atual
 

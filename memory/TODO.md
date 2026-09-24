@@ -1,7 +1,31 @@
 # TODO.md — SGA-M (COMPAC)
 
-> Atualizado: 2026-09-17 — BLOCO 4 implementado (migration v26 + QR relacional + gates PASS).
+> Atualizado: 2026-09-24 — FASE A fundação (branch `refactor/fundacao-arquitetura`, sem FASE B).
 > Regra: não manter como pendente o que já foi concluído; marcar estado real (PLANEJADO / IMPLEMENTADO / VALIDADO / BLOQUEADO / NÃO VALIDADO).
+
+## B. FASE A — Fundação (branch `refactor/fundacao-arquitetura`)
+
+- [x] ETAPA 1 VALIDADO: `origin/master` = `efa6df6` (PR #1, FASE 11.2 mergeada — divergência da memória corrigida); live com v23→v26 + dados; 21 suítes; produção NÃO VALIDADA (sem acesso Vercel)
+- [x] ETAPA 2 IMPLEMENTADO+VALIDADO: dedup broadcast corrigido (`existeNaJanela` + `.is()`) + `revalidatePath` em marcar lida/todas + `tests/notificacoes-dedup.test.ts` 4/4 PASS
+- [x] ETAPA 3 IMPLEMENTADO: `lib/email-pipeline.ts` (evento→template→provider→recibo) + convite migra para pipeline (mesmo texto) + SMTP no `.env.homolog.example` + `tests/email-pipeline.test.ts` 3/3
+- [x] ETAPA 4 IMPLEMENTADO: `/admin/configuracoes` hub (ADMIN, só links reais) + item no sidebar
+- [x] ETAPA 5 AUDITADO: visibilidade = tudo-ou-nada por página (`pode()` + server); custos visíveis a qualquer `estoque.ver`; escopo de registro = org (exceto overlay Bloco 3); gestão segue em `/admin/usuarios`, linkada do hub
+- [x] ETAPA 6 IMPLEMENTADO: link Usuários → `/admin/usuarios` dentro de Cadastros (sem duplicar entidade, sem remover rota)
+- [x] ETAPA 9 GATE FINAL 2026-09-24: suíte completa em 5 blocos — 23 arquivos, 216/216 PASS (58+36+27+41+54), 0 fail, 0 skipped; `tsc` 0; `lint` 0+24; `build` 43 rotas (`/admin/configuracoes` inclusa); push `refactor/fundacao-arquitetura` p/ Preview (sem produção)
+- [x] DEPLOY Preview 2026-09-24: Vercel SUCCESS no commit `a1eac3c` (confirmado pelo usuário — deploy saudável, NÃO equivale a funcional); ancestry validada (2 à frente/1 atrás de `origin/master`, ancestral `fbbad15` — merge PR #1, não é problema)
+- [x] E2E AUTOMATIZADO 2026-09-24 (Playwright headless, dev local, org temporária limpa após): 15/15 PASS — login, sino 1x, marcar lida atualiza+persistente, 37 links config sem 404, anon bloqueado, cadastros→usuários, convite erro+sucesso, estoque criar+consultar, zero secrets no browser; screenshots em temp (3ª execução verde; 2 falhas transitórias/artefato documentadas)
+- [x] COMMIT+ PUSH FASE A 2026-09-24 (autorização explícita): `feat(FASE A): ...` em `refactor/fundacao-arquitetura` → origin; sem merge/PR/deploy; FASE B bloqueada
+- [ ] PLANEJADO: validação manual no Preview da FASE A (6 fluxos); FASE B só com nova autorização
+
+## A. NOVO ROADMAP — Rearquitetura V2 (nada implementado)
+- [ ] PLANEJADO: Fase A — auditoria runtime notificações + `config_sistema`/`email_templates` + Permissões→Configurações + Cadastros>Usuários
+- [ ] PLANEJADO: Fase B — Intake Engine + `/atendimento` + portal + thread + participantes + e-mails
+- [ ] PLANEJADO: Fase C — compra conversacional + QR como link de atendimento
+- [ ] PLANEJADO: Fase D — nova navegação + despublicar mensagens/organograma/busca-rota (código preservado)
+- [ ] PLANEJADO: Fase E — estoque avançado + `/m/*` + modos operacionais
+- [ ] PLANEJADO: Fase F — LLM opcional + endurecimento + QA + Preview + aprovação + produção
+- [ ] DECISÃO PENDENTE: criar branch `refactor/rearquitetura-sgam` a partir de master (requer aval; working tree tem `M memory/*` + untracked — não apagar)
+- [ ] DECISÃO PENDENTE: `setores`/`equipes` como tabelas, `ti.administrar`, reuso `conversas` vs `chamado_mensagens`, provider e-mail, realtime (ver R1–R8 em `REARQUITETURA-V2.md`)
 
 ## -3. BLOCO 4 — QR compras relacional (branch `fix/os-foto-antes-bug`)
 
@@ -11,7 +35,8 @@
 - [x] IMPLEMENTADO: linha v26 em `MIGRATIONS_INVENTORY.md`
 - [x] VALIDADO 2026-09-17: `tsc` 0 errors; `lint` 0 errors + 24 warnings (pré-existentes); `build` SUCCESS 42 rotas íntegras
 - [x] APLICADO 2026-09-17: `schema_v23.sql` → `v24` → `v25` → `v26` no Supabase (usuário) + probe confirma tabelas/colunas/RPC
-- [ ] PLANEJADO: Preview + validação manual fim a fim (cadastros → almox → QR → solicitação → permissões)
+- [ ] [ARQUIVADO — FEEDBACK DO CLIENTE] Preview + validação manual fim a fim do fluxo antigo (cadastros → almox → QR → solicitação → permissões) — fluxo de solicitação será conversacional
+- [ ] [ARQUIVADO — FEEDBACK DO CLIENTE] Rollout gradual do overlay por módulo no modelo antigo (será redesenhado sob Configurações > Permissões)
 
 ## -2. BLOCO 3 — Permissões customizáveis (branch `fix/os-foto-antes-bug`)
 
@@ -21,7 +46,7 @@
 - [x] IMPLEMENTADO: `PermissoesEditor` em `/admin/usuarios` (listar/definir/remover por membro, chips + form por módulo) + linha v25 em `MIGRATIONS_INVENTORY.md`
 - [x] VALIDADO 2026-09-17: `tsc` 0 errors; `lint` 0 errors + 24 warnings (pré-existentes); `build` SUCCESS 42 rotas íntegras (após split client-safe/server do helper — Turbopack não aceita `next/headers` no bundle client)
 - [x] APLICADO 2026-09-17: `schema_v23.sql` + `v24` + `v25` via SQL Editor (usuário) — ver P-ABERTO-05
-- [ ] PLANEJADO: Preview + validação manual (conceder estoque.movimentar a SOLICITANTE restrito a 1 almox → movimentar dentro/fora; negar global → bloqueio; remover → volta ao perfil)
+- [ ] [ARQUIVADO — FEEDBACK DO CLIENTE] Preview + validação do fluxo antigo de permissões por módulo isolado (será Configurações > Permissões)
 - [ ] PLANEJADO (rollout gradual): demais módulos (ativos, chamados, compras, etc.) ainda usam `exigirPermissao` por perfil — migrar por módulo nas próximas fases
 
 ## -1. BLOCO 2 — Almoxarifados + estoque dual (branch `fix/os-foto-antes-bug`)
@@ -33,7 +58,7 @@
 - [x] IMPLEMENTADO: shim PGRST202 em `movimentarEstoque`/`transferirEstoque` (recuo legado pré-v24) + linha v24 em `MIGRATIONS_INVENTORY.md`
 - [x] VALIDADO 2026-09-17: `tsc` 0 errors; `lint` 0 errors + 24 warnings (pré-existentes, nenhum em arquivo novo); `build` SUCCESS 42 rotas íntegras
 - [x] APLICADO 2026-09-17: `schema_v23.sql` + `schema_v24.sql` via SQL Editor (usuário) — ver P-ABERTO-05
-- [ ] PLANEJADO: Preview + validação manual (criar almox → vincular produto → movimentar segmentado → transferir entre almox → conferir par auditado)
+- [ ] [ARQUIVADO — FEEDBACK DO CLIENTE] Preview + validação manual do modelo antigo de estoque dual isolado (será revisto na Fase E)
 
 ## 0. BLOCO 1 — Cadastros mestres (branch `fix/os-foto-antes-bug`)
 
@@ -43,7 +68,7 @@
 - [x] IMPLEMENTADO: linha v23 em `MIGRATIONS_INVENTORY.md`
 - [x] VALIDADO 2026-09-17: `tsc` 0 errors; `lint` 0 errors + 24 warnings (pré-existentes, nenhum em arquivo novo); `build` SUCCESS 42 rotas (41 + `/admin/cadastros`)
 - [x] APLICADO 2026-09-17: `schema_v23.sql` via SQL Editor (usuário) — ver P-ABERTO-05
-- [ ] PLANEJADO: Preview + validação manual (criar depto → vincular localidade → criar CC → editar → excluir com vínculo bloqueado)
+- [ ] [ARQUIVADO — FEEDBACK DO CLIENTE] Preview + validação manual do Cadastros isolado (será centro de dados mestres na Fase A)
 
 ## 1. Fase atual — FASE 11.2 (branch `fix/os-foto-antes-bug`)
 
@@ -57,7 +82,7 @@
 - [ ] BLOQUEADO (não impeditivo p/ merge): suíte completa `npx vitest run` (20 arquivos) excede 10 min — exige Supabase live + setup sequencial por arquivo (`fileParallelism:false`); rodar em janela longa ou por blocos
 - [ ] PLANEJADO: deploy Preview + validação visual desktop/smartphone (abrir O.S., upload durante/depois, reabrir, navegação)
 - [ ] PLANEJADO (requer aval): merge `fix/os-foto-antes-bug` → `master` + re-aplicar `fundacao-cadastro.test.ts` e `seletor-localidade.test.ts` (estavam em `fix/cadastro-estrutura`)
-- [ ] PLANEJADO: reconciliar contagem de testes (docs dizem 202, disco tem 22 arquivos de teste) e rotas (38 vs 41)
+- [x] VALIDADO 2026-09-21: reconciliação por blocos contra Supabase live — 21 suítes, 209/209 PASS (A 62 + B 43 + C 51 + D 53); inventário real: 42 `page.tsx` + 2 `route.ts`, 17 `*Form.tsx` (+ inline ≈ 19 funcionais). Docs com 202/38/19 defasados (era QA 2026-09-11).
 
 ## 2. Backlog aceito (não bloqueador, docs oficiais)
 

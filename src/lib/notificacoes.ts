@@ -8,6 +8,31 @@ import { requireOrg } from "@/lib/org";
 import type { PeriodoId } from "@/lib/analytics/types";
 import { getPeriodoRangeBRT } from "@/lib/analytics/calculations";
 
+type DbClient = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Checagem de duplicata na janela (extraída para teste).
+ * Broadcast (`userId` null) usa `.is()` — `.eq(col, null)` gera
+ * `= NULL` no Postgres e NUNCA casa (bug FASE A: dedup cego que
+ * duplicava o sino a cada verificação).
+ */
+export async function existeNaJanela(
+  supabase: DbClient,
+  orgId: string,
+  input: { tipo: string; userId?: string | null; desdeISO: string },
+): Promise<boolean> {
+  let q = supabase
+    .from("notificacoes")
+    .select("id")
+    .eq("organization_id", orgId)
+    .eq("tipo", input.tipo)
+    .gte("created_at", input.desdeISO)
+    .limit(1);
+  q = input.userId ? q.eq("user_id", input.userId) : q.is("user_id", null);
+  const { data } = await q;
+  return (data ?? []).length > 0;
+}
+
 /**
  * Gera notificação idempotente: tipo + entidade + entidade_id + destinatário + janela
  * Usa upsert com onConflict para evitar duplicação.
@@ -28,19 +53,7 @@ export async function gerarNotificacaoIdempotente(input: {
   const janela = input.janelaHoras ?? 24;
   const desde = new Date(Date.now() - janela * 3600000).toISOString();
 
-  const { data: existentes } = await supabase
-    .from("notificacoes")
-    .select("id")
-    .eq("organization_id", ctx.orgId)
-    .eq("tipo", input.tipo)
-    .eq("user_id", input.userId ?? null)
-    .gte("created_at", desde)
-    .limit(1);
-
-  // Se já existe na janela, não criar duplicata
-  if (existentes && existentes.length > 0) {
-    // Verificar se a entidade é a mesma (via link ou descrição)
-    // Para simplificar, se o tipo e destinatário já existem na janela, não duplicar
+  if (await existeNaJanela(supabase, ctx.orgId, { tipo: input.tipo, userId: input.userId ?? null, desdeISO: desde })) {
     return;
   }
 

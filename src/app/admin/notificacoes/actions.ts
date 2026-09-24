@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireOrg } from "@/lib/org";
 
@@ -50,6 +51,9 @@ export async function marcarLida(id: string): Promise<void> {
       .eq("id", id)
       .eq("organization_id", ctx.orgId)
       .or(`user_id.is.null,user_id.eq.${ctx.userId}`);
+    // FASE A: sem revalidate a UI (lista + badge do sino no layout) ficava presa até reload manual.
+    revalidatePath("/admin/notificacoes");
+    revalidatePath("/admin", "layout");
   } catch {
     // Silencioso.
   }
@@ -66,6 +70,8 @@ export async function marcarTodasLidas(): Promise<void> {
       .eq("organization_id", ctx.orgId)
       .eq("lida", false)
       .or(`user_id.is.null,user_id.eq.${ctx.userId}`);
+    revalidatePath("/admin/notificacoes");
+    revalidatePath("/admin", "layout");
   } catch {
     // Silencioso.
   }

@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { dispararEmail } from "./email-pipeline";
 
 /**
  * Envio de e-mails transacionais (server-only).
@@ -29,12 +30,11 @@ export async function smtpConfigurado(): Promise<boolean> {
   return transporter() !== null;
 }
 
-/** E-mail com a senha provisória do primeiro acesso. */
-export async function enviarSenhaProvisoria(input: {
+/** Envio genérico de texto (provider do pipeline FASE A). */
+export async function enviarTexto(input: {
   para: string;
-  nome: string;
-  senha: string;
-  orgNome: string;
+  assunto: string;
+  texto: string;
 }): Promise<ResultadoEmail> {
   const t = transporter();
   if (!t) {
@@ -44,22 +44,31 @@ export async function enviarSenhaProvisoria(input: {
     await t.sendMail({
       from: process.env.SMTP_FROM ?? process.env.SMTP_USER,
       to: input.para,
-      subject: `Seu acesso ao SGA-M · ${input.orgNome}`,
-      text: [
-        `Olá, ${input.nome}!`,
-        ``,
-        `Sua conta no SGA-M (${input.orgNome}) foi criada.`,
-        ``,
-        `E-mail: ${input.para}`,
-        `Senha provisória (uso único): ${input.senha}`,
-        ``,
-        `Entre em ${process.env.NEXT_PUBLIC_SITE_URL ?? "https://compac-xi.vercel.app"}/login e defina sua senha permanente no primeiro acesso.`,
-        ``,
-        `Não compartilhe esta senha.`,
-      ].join("\n"),
+      subject: input.assunto,
+      text: input.texto,
     });
     return { enviado: true };
   } catch {
     return { enviado: false, motivo: "Falha de conexão com o SMTP." };
   }
+}
+
+/** E-mail com a senha provisória do primeiro acesso (via pipeline FASE A). */
+export async function enviarSenhaProvisoria(input: {
+  para: string;
+  nome: string;
+  senha: string;
+  orgNome: string;
+}): Promise<ResultadoEmail> {
+  const r = await dispararEmail({
+    evento: "convite_acesso",
+    para: input.para,
+    variaveis: {
+      nome: input.nome,
+      senha: input.senha,
+      orgNome: input.orgNome,
+      siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "https://compac-xi.vercel.app",
+    },
+  });
+  return { enviado: r.enviado, motivo: r.motivo };
 }

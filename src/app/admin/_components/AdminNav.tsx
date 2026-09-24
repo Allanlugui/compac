@@ -196,6 +196,13 @@ export const SECOES_NAV: SecaoNav[] = [
         papeis: ["ADMIN"],
       },
       {
+        href: "/admin/configuracoes",
+        rotulo: "Configurações",
+        Icone: ShieldCheck,
+        ativoEm: (p) => p.startsWith("/admin/configuracoes"),
+        papeis: ["ADMIN"],
+      },
+      {
         href: "/admin/auditoria",
         rotulo: "Auditoria",
         Icone: ShieldCheck,

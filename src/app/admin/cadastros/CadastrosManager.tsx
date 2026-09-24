@@ -283,6 +283,12 @@ export default function CadastrosManager({
         >
           <Package className="size-4" /> Almoxarifados
         </button>
+        <a
+          href="/admin/usuarios"
+          className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-bold text-zinc-700 ring-1 ring-zinc-300 transition hover:bg-zinc-100 sm:flex-none"
+        >
+          Usuários →
+        </a>
       </div>
 
       {erro && (
