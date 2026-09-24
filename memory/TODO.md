@@ -1,7 +1,13 @@
 # TODO.md — SGA-M (COMPAC)
 
-> Atualizado: 2026-09-24 — FASE A fundação (branch `refactor/fundacao-arquitetura`, sem FASE B).
+> Atualizado: 2026-09-24 — FASE 1 BLOCO 1 concluído (branch `refactor/sgam-rearquitetura-cliente`, PARADO p/ validação).
 > Regra: não manter como pendente o que já foi concluído; marcar estado real (PLANEJADO / IMPLEMENTADO / VALIDADO / BLOQUEADO / NÃO VALIDADO).
+
+## C. FASE 1 — Rearquitetura funcional (branch `refactor/sgam-rearquitetura-cliente`, base `a9cb2bc`, `D-RESET-CLIENTE-02`)
+
+- [x] BLOCO 1 IMPLEMENTADO: navegação 4 grupos (Configurações + Meu Perfil no Administração; sem Mensagens/Organograma/Busca no menu; BuscaGlobal mantida) + hub Configurações com 8 destinos reais + back-link perfil→usuários; rotas legadas preservadas e funcionais (sem 500)
+- [x] BLOCO 1 VALIDADO: `tsc` 0; `lint` 0+24; `build` SUCCESS; E2E 17/17 (sidebar, hub 7 links, banco limpo, dev parado)
+- [ ] PARADO: aguardar validação do BLOCO 1 antes do BLOCO 2 (Intake Engine). NÃO commitar sem ordem.
 
 ## B. FASE A — Fundação (branch `refactor/fundacao-arquitetura`)
 

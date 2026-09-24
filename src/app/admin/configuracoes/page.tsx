@@ -22,43 +22,52 @@ interface Secao {
  */
 const SECOES: Secao[] = [
   {
-    titulo: "Usuários e permissões",
-    descricao: "Membros, perfis e overrides granulares por usuário (matriz + escopo).",
-    href: "/admin/usuarios",
-    rotulo: "Abrir usuários",
-    futuro: "Fase A+: matriz por papel editável aqui.",
-  },
-  {
-    titulo: "Cadastros mestres",
-    descricao: "Departamentos, centros de custo e almoxarifados.",
-    href: "/admin/cadastros",
-    rotulo: "Abrir cadastros",
-  },
-  {
-    titulo: "Estrutura física",
+    titulo: "Estrutura",
     descricao: "Árvore unidade → sala e categorias.",
     href: "/admin/estrutura",
     rotulo: "Abrir estrutura",
   },
   {
-    titulo: "QR e links públicos",
-    descricao: "Contextos de QR e tokens de entrada.",
-    href: "/admin/qr-compras",
-    rotulo: "Abrir QR",
-    futuro: "Fase C: links de atendimento configuráveis.",
+    titulo: "Cadastros",
+    descricao: "Departamentos, centros de custo e almoxarifados.",
+    href: "/admin/cadastros",
+    rotulo: "Abrir cadastros",
   },
   {
-    titulo: "E-mail",
-    descricao: "Pipeline evento → template → provider SMTP (server-only).",
-    href: "/admin/monitoramento",
-    rotulo: "Ver monitoramento",
-    futuro: "Fase B: templates editáveis + log de envios.",
+    titulo: "Usuários",
+    descricao: "Membros, perfis e acesso.",
+    href: "/admin/usuarios",
+    rotulo: "Abrir usuários",
+  },
+  {
+    titulo: "Permissões",
+    descricao: "Matriz por perfil + overrides granulares por usuário (na tela de usuários).",
+    href: "/admin/usuarios",
+    rotulo: "Gerenciar permissões",
   },
   {
     titulo: "Auditoria",
     descricao: "Trilha imutável de mutações.",
     href: "/admin/auditoria",
     rotulo: "Abrir auditoria",
+  },
+  {
+    titulo: "Monitoramento",
+    descricao: "Saúde operacional e preventivas.",
+    href: "/admin/monitoramento",
+    rotulo: "Abrir monitoramento",
+  },
+  {
+    titulo: "Notificações",
+    descricao: "Central do sino e regras de envio.",
+    href: "/admin/notificacoes",
+    rotulo: "Abrir notificações",
+  },
+  {
+    titulo: "Links e QR Codes",
+    descricao: "Contextos de QR e tokens de entrada.",
+    href: "/admin/qr-compras",
+    rotulo: "Abrir QR",
   },
 ];
 
@@ -82,7 +91,7 @@ export default async function ConfiguracoesPage() {
     <div className="space-y-6">
       <PageHeader
         titulo="Configurações"
-        descricao={`${ctx.orgNome} · centro de configurações do sistema (fundação FASE A).`}
+        descricao={`${ctx.orgNome} · estrutura, cadastros, usuários, permissões, auditoria e links.`}
       />
       <div className="grid gap-3 sm:grid-cols-2">
         {SECOES.map((s) => (

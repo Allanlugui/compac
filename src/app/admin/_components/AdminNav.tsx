@@ -138,28 +138,7 @@ export const SECOES_NAV: SecaoNav[] = [
         href: "/admin/mapa",
         rotulo: "Mapa",
         Icone: Building2,
-        ativoEm: (p) => p.startsWith("/admin/mapa") || p.startsWith("/admin/estrutura"),
-        papeis: TODOS,
-      },
-      {
-        href: "/admin/busca",
-        rotulo: "Busca",
-        Icone: Building2,
-        ativoEm: (p) => p.startsWith("/admin/busca"),
-        papeis: TODOS,
-      },
-      {
-        href: "/admin/organograma",
-        rotulo: "Organograma",
-        Icone: Users,
-        ativoEm: (p) => p.startsWith("/admin/organograma"),
-        papeis: TODOS,
-      },
-      {
-        href: "/admin/mensagens",
-        rotulo: "Mensagens",
-        Icone: Users,
-        ativoEm: (p) => p.startsWith("/admin/mensagens"),
+        ativoEm: (p) => p.startsWith("/admin/mapa"),
         papeis: TODOS,
       },
       {
@@ -175,46 +154,19 @@ export const SECOES_NAV: SecaoNav[] = [
     titulo: "Administração",
     itens: [
       {
-        href: "/admin/estrutura",
-        rotulo: "Estrutura",
-        Icone: Building2,
-        ativoEm: (p) => p.startsWith("/admin/estrutura"),
-        papeis: ["ADMIN", "GESTOR"],
-      },
-      {
-        href: "/admin/cadastros",
-        rotulo: "Cadastros",
-        Icone: ClipboardCheck,
-        ativoEm: (p) => p.startsWith("/admin/cadastros"),
-        papeis: ["ADMIN", "GESTOR"],
-      },
-      {
-        href: "/admin/usuarios",
-        rotulo: "Usuários",
-        Icone: Users,
-        ativoEm: (p) => p.startsWith("/admin/usuarios"),
-        papeis: ["ADMIN"],
-      },
-      {
         href: "/admin/configuracoes",
         rotulo: "Configurações",
         Icone: ShieldCheck,
-        ativoEm: (p) => p.startsWith("/admin/configuracoes"),
+        ativoEm: (p) =>
+          p.startsWith("/admin/configuracoes") ||
+          p.startsWith("/admin/estrutura") ||
+          p.startsWith("/admin/cadastros") ||
+          p.startsWith("/admin/usuarios") ||
+          p.startsWith("/admin/auditoria") ||
+          p.startsWith("/admin/monitoramento") ||
+          p.startsWith("/admin/qr-compras") ||
+          p.startsWith("/admin/notificacoes"),
         papeis: ["ADMIN"],
-      },
-      {
-        href: "/admin/auditoria",
-        rotulo: "Auditoria",
-        Icone: ShieldCheck,
-        ativoEm: (p) => p.startsWith("/admin/auditoria"),
-        papeis: ["ADMIN", "GESTOR", "AUDITOR"],
-      },
-      {
-        href: "/admin/monitoramento",
-        rotulo: "Monitoramento",
-        Icone: Building2,
-        ativoEm: (p) => p.startsWith("/admin/monitoramento"),
-        papeis: ["ADMIN", "GESTOR", "AUDITOR"],
       },
       {
         href: "/admin/perfil",
@@ -268,7 +220,7 @@ const ITENS_BOTTOM: ItemNav[] = [
     href: "/admin/mapa",
     rotulo: "Mapa",
     Icone: Building2,
-    ativoEm: (p) => p.startsWith("/admin/mapa") || p.startsWith("/admin/busca"),
+    ativoEm: (p) => p.startsWith("/admin/mapa"),
     papeis: TODOS,
   },
 ];

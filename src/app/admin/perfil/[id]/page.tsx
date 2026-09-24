@@ -18,7 +18,7 @@ export default async function PerfilOutroPage({ params }: { params: Promise<{ id
   // Field visibility: só dados permitidos (não email/telefone/matricula privados)
   return (
     <div className="space-y-6">
-      <PageHeader titulo={profile.nome ?? "Perfil"} descricao={`${(membership as { role: string }).role} · ${ctx.orgNome}`} voltar={{ href: "/admin/organograma", rotulo: "Organograma" }} />
+      <PageHeader titulo={profile.nome ?? "Perfil"} descricao={`${(membership as { role: string }).role} · ${ctx.orgNome}`} voltar={{ href: "/admin/usuarios", rotulo: "Usuários" }} />
       <div className="rounded-2xl border bg-white p-6 shadow-sm">
         <p className="font-bold">{profile.nome}</p>
         <p className="text-sm text-zinc-500">{profile.cargo ?? (membership as { role: string }).role}</p>

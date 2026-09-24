@@ -12,6 +12,12 @@
 - **Impacto:** TODO antigo arquivado por item; novas fases A–F em `REARQUITETURA-V2.md` §H; próxima fase exige decisão/aval antes de codar.
 - **Ref:** `memory/REARQUITETURA-V2.md`, protocolo FASE 0.
 
+## 00b. D-RESET-CLIENTE-02 — FASE 1 a partir do trabalho bom (2026-09-24)
+
+- **Decisão:** branch `refactor/sgam-rearquitetura-cliente` criada de `a9cb2bc` (base com Blocos 1–4 + FASE A testados); FASE A reprovada como aprovação funcional, código bom reaproveitado; BLOCO 1 (navegação + hub) sem novas tabelas, rotas legadas preservadas.
+- **Deferidos (sem botão/placeholder):** E-mail templates UI, Atendimento/Agente config e Gerais → blocos próprios.
+- **Ref:** FASE 1, BLOCO 1.
+
 ## 00. D-FASEA-01 — Branch a partir da base real (2026-09-24, FASE A)
 
 - **Decisão:** `refactor/fundacao-arquitetura` criada de `a1eac3c` (não de master), pois master (`f8e0886` local; `efa6df6` remoto) não contém Blocos 1–4 nem `memory/`.
