@@ -7,6 +7,7 @@
 
 - **R1 — Notificações:** bugs relatados sem repro. HIPÓTESE técnica: dedup broadcast quebrado (`.eq("user_id", null)` nunca casa em Postgres) → duplicatas no sino. Auditar runtime antes de redesenhar.
 - **R1 RESOLVIDO (FASE A, 2026-09-24):** confirmado em código + teste de semântica PostgREST; fix `existeNaJanela` (`.is()` p/ NULL) + `revalidatePath` em marcar lida/todas (UI presa até reload); `tests/notificacoes-dedup.test.ts` 4/4 PASS no live. Limitações mantidas: dedup por tipo+destinatário (entidade ignorada — sem coluna), actions silenciosas sem retorno de erro.
+- **R9 RESOLVIDO (FASE 1 BLOCO 2, 2026-09-24):** `validarSlot` retornava `string` para texto válido E para erro → `responder()` tratava toda resposta texto como falha. Prova: 7/7 testes falhando com `responder(solicitante_nome): Maria`. Fix: contrato discriminado `{ok,valor,error}`; 7/7 PASS.
 - **R2 — `conversas` vs thread do ticket:** reuso parcial possível (sender binding + imutabilidade) — auditar antes de criar `chamado_mensagens`.
 - **R3 — Solicitante externo/LGPD:** retenção e consentimento a definir com TI.
 - **R4 — SMTP:** deliverability atual desconhecida — avaliar provider na Fase A.

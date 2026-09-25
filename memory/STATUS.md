@@ -2,7 +2,7 @@
 
 > Fonte de contexto operacional. Precedência: código executado > config real > testes > docs > memória histórica.
 > Regras aplicadas: `F:/dev/memory/regras-agente.md` (Preservação, Auto-Gravação, Execução Contínua) + `F:/dev/memory/padroes-codigo.md`.
-> Última atualização: 2026-09-24 — FASE 1 BLOCO 1 concluído e PARADO p/ validação (branch `refactor/sgam-rearquitetura-cliente` de `a9cb2bc`; E2E 17/17; sem commit). Produção congelada.
+> Última atualização: 2026-09-24 — FASE 1 BLOCO 2 concluído e PARADO p/ validação (Intake Engine pura 7/7, gates PASS, sem commit, sem BLOCO 3). Produção congelada.
 
 ## 1. Estado atual
 

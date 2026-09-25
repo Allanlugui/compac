@@ -5,9 +5,10 @@
 
 ## C. FASE 1 — Rearquitetura funcional (branch `refactor/sgam-rearquitetura-cliente`, base `a9cb2bc`, `D-RESET-CLIENTE-02`)
 
-- [x] BLOCO 1 IMPLEMENTADO: navegação 4 grupos (Configurações + Meu Perfil no Administração; sem Mensagens/Organograma/Busca no menu; BuscaGlobal mantida) + hub Configurações com 8 destinos reais + back-link perfil→usuários; rotas legadas preservadas e funcionais (sem 500)
-- [x] BLOCO 1 VALIDADO: `tsc` 0; `lint` 0+24; `build` SUCCESS; E2E 17/17 (sidebar, hub 7 links, banco limpo, dev parado)
-- [ ] PARADO: aguardar validação do BLOCO 1 antes do BLOCO 2 (Intake Engine). NÃO commitar sem ordem.
+- [x] BLOCO 1 JA VALIDADO (navegação + hub; E2E 17/17) — aguardando validação formal p/ commit
+- [x] BLOCO 2 IMPLEMENTADO: `src/lib/intake/` (types+slots+engine+mapeamento, 100% puro, sem DB/IA/UI) + `tests/intake-engine.test.ts` 7/7
+- [x] BLOCO 2 VALIDADO: `tsc` 0; `lint` 0+24; `build` SUCCESS; auditoria fluxo atual registrada (reuso vs substituição)
+- [ ] PARADO: aguardar validação dos BLOCOS 1–2 antes do BLOCO 3 (QR/link contextual). NÃO commitar sem ordem.
 
 ## B. FASE A — Fundação (branch `refactor/fundacao-arquitetura`)
 

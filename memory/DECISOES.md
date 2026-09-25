@@ -18,6 +18,14 @@
 - **Deferidos (sem botão/placeholder):** E-mail templates UI, Atendimento/Agente config e Gerais → blocos próprios.
 - **Ref:** FASE 1, BLOCO 1.
 
+## 00c. D-BLOCO2-INTAKE — Motor puro + contratos (2026-09-24, FASE 1 BLOCO 2)
+
+- **Decisão:** `src/lib/intake/` 100% puro (tipos, slots com `quando` contextual, engine validar→avançar→confirmar, mapeamentos para payload); sem DB/IA/UI/rotas; persistência e chat nos blocos seguintes.
+- **Auditoria (§22):** REUSAR token→tenant server-side, validação de fotos (MIME/8MB/rate/paths), inserts service + audit, tabelas chamados/solicitacoes, RLS, Storage privado. SUBSTITUIR (futuro): formulário público como porta principal, QR-compra form, mensagens global.
+- **Bug pego por teste:** `validarSlot` retornava string tanto p/ texto válido quanto p/ erro → contrato refeito p/ `{ok,valor,error}` discriminado.
+- **NÃO VALIDADO:** persistência de sessão (`intake_sessoes` — pesquisar duplicidade antes de criar tabela no BLOCO 3/4).
+- **Ref:** `src/lib/intake/`, `tests/intake-engine.test.ts` 7/7.
+
 ## 00. D-FASEA-01 — Branch a partir da base real (2026-09-24, FASE A)
 
 - **Decisão:** `refactor/fundacao-arquitetura` criada de `a1eac3c` (não de master), pois master (`f8e0886` local; `efa6df6` remoto) não contém Blocos 1–4 nem `memory/`.
