@@ -26,6 +26,13 @@
 - **NÃO VALIDADO:** persistência de sessão (`intake_sessoes` — pesquisar duplicidade antes de criar tabela no BLOCO 3/4).
 - **Ref:** `src/lib/intake/`, `tests/intake-engine.test.ts` 7/7.
 
+## 00d. D-BLOCO3-ENTRADA — Contexto reutilizado + sessão sem tabela (2026-09-24, FASE 1 BLOCO 3)
+
+- **Decisão:** 4 entradas via tokens existentes (`ativos.qr_code_hash`, `qr_contextos.token` ×2 fluxos, `organizations.entry_token`); paths `/atendimento/a|l|u|c/[ref]` (não `[ref]` único — evita ambiguidade semântica); sessão = estado client + revalidação integral server-side (sem `intake_sessoes`).
+- **Auditoria persistência (§4/§7):** nenhum mecanismo de sessão existe (fluxos single-shot); tabela julgada DESNECESSÁRIA nesta fase (refresh perde progresso — limitação documentada).
+- **Achado:** orgs pós-v4 sem `entry_token` (só backfill) + `chamados.ativo_id` NOT NULL bloqueava universal → `schema_v27.sql` CRIADA NÃO aplicada.
+- **Ref:** `src/lib/intake/contexto.ts`, `src/app/atendimento/`, `tests/atendimento-contexto.test.ts` 6/6, E2E 10/10.
+
 ## 00. D-FASEA-01 — Branch a partir da base real (2026-09-24, FASE A)
 
 - **Decisão:** `refactor/fundacao-arquitetura` criada de `a1eac3c` (não de master), pois master (`f8e0886` local; `efa6df6` remoto) não contém Blocos 1–4 nem `memory/`.

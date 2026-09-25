@@ -1,6 +1,6 @@
 # TODO.md — SGA-M (COMPAC)
 
-> Atualizado: 2026-09-24 — FASE 1 BLOCO 1 concluído (branch `refactor/sgam-rearquitetura-cliente`, PARADO p/ validação).
+> Atualizado: 2026-09-24 — FASE 1 BLOCO 3 concluído (PARADO p/ validação, sem BLOCO 4).
 > Regra: não manter como pendente o que já foi concluído; marcar estado real (PLANEJADO / IMPLEMENTADO / VALIDADO / BLOQUEADO / NÃO VALIDADO).
 
 ## C. FASE 1 — Rearquitetura funcional (branch `refactor/sgam-rearquitetura-cliente`, base `a9cb2bc`, `D-RESET-CLIENTE-02`)
@@ -8,7 +8,10 @@
 - [x] BLOCO 1 JA VALIDADO (navegação + hub; E2E 17/17) — aguardando validação formal p/ commit
 - [x] BLOCO 2 IMPLEMENTADO: `src/lib/intake/` (types+slots+engine+mapeamento, 100% puro, sem DB/IA/UI) + `tests/intake-engine.test.ts` 7/7
 - [x] BLOCO 2 VALIDADO: `tsc` 0; `lint` 0+24; `build` SUCCESS; auditoria fluxo atual registrada (reuso vs substituição)
-- [ ] PARADO: aguardar validação dos BLOCOS 1–2 antes do BLOCO 3 (QR/link contextual). NÃO commitar sem ordem.
+- [x] CHECKPOINT 2026-09-24 (`dc79e0c` + push origin, sem merge): suíte 223/223 em 6 execuções (65+36+27+41+54; 2 falhas transitórias de rede repetidas com 16/16); tsc 0; lint 0+24; build SUCCESS; Preview URL/status NÃO VALIDADOS
+- [x] BLOCO 3 IMPLEMENTADO: `resolverEntrada` 4 contextos (tokens existentes, sem tabela nova) + `/atendimento/a|l|u|c/[ref]` + chat determinístico (1 pergunta/vez, resumo, voltar) + `concluirAtendimento` (revalidação integral + ticket real + fotos + audit); fluxo antigo intacto
+- [x] BLOCO 3 VALIDADO: `tests/atendimento-contexto.test.ts` 6/6 + E2E 10/10 (chat→chamado+foto+404s, banco limpo) + `tsc` 0 + `lint` 0+24 + `build` 47 rotas; `schema_v27.sql` CRIADA NÃO aplicada (entry_token default + ativo_id nullable)
+- [ ] PARADO: aguardar validação do BLOCO 3 antes do BLOCO 4 (Ticket+portal). NÃO commitar sem ordem.
 
 ## B. FASE A — Fundação (branch `refactor/fundacao-arquitetura`)
 

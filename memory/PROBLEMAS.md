@@ -8,6 +8,8 @@
 - **R1 — Notificações:** bugs relatados sem repro. HIPÓTESE técnica: dedup broadcast quebrado (`.eq("user_id", null)` nunca casa em Postgres) → duplicatas no sino. Auditar runtime antes de redesenhar.
 - **R1 RESOLVIDO (FASE A, 2026-09-24):** confirmado em código + teste de semântica PostgREST; fix `existeNaJanela` (`.is()` p/ NULL) + `revalidatePath` em marcar lida/todas (UI presa até reload); `tests/notificacoes-dedup.test.ts` 4/4 PASS no live. Limitações mantidas: dedup por tipo+destinatário (entidade ignorada — sem coluna), actions silenciosas sem retorno de erro.
 - **R9 RESOLVIDO (FASE 1 BLOCO 2, 2026-09-24):** `validarSlot` retornava `string` para texto válido E para erro → `responder()` tratava toda resposta texto como falha. Prova: 7/7 testes falhando com `responder(solicitante_nome): Maria`. Fix: contrato discriminado `{ok,valor,error}`; 7/7 PASS.
+- **R10 RESOLVIDO (FASE 1 BLOCO 3, 2026-09-24):** `avancar` limpava `arquivos` (state) antes do `enviar` usar → fotos nunca chegavam ao servidor (ticket sem anexo, sem erro). Prova: E2E 8/10 com `fotos_antes: []`. Fix: `arquivosRef` persistente + limpeza só no sucesso; E2E 10/10.
+- **P-ABERTO-06 — v27 NÃO aplicada (BLOQUEIA universal sem ativo):** orgs pós-v4 sem `entry_token` + `chamados.ativo_id` NOT NULL. `schema_v27.sql` criada (default + nullable, idempotente). **NÃO APLICADA — aguarda validação.** Fluxos a/l/c funcionam sem ela.
 - **R2 — `conversas` vs thread do ticket:** reuso parcial possível (sender binding + imutabilidade) — auditar antes de criar `chamado_mensagens`.
 - **R3 — Solicitante externo/LGPD:** retenção e consentimento a definir com TI.
 - **R4 — SMTP:** deliverability atual desconhecida — avaliar provider na Fase A.
