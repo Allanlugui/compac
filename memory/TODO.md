@@ -1,6 +1,6 @@
 # TODO.md — SGA-M (COMPAC)
 
-> Atualizado: 2026-09-24 — FASE 1 BLOCO 3 concluído (PARADO p/ validação, sem BLOCO 4).
+> Atualizado: 2026-09-25 — BLOCO 3.6 concluído (DS mínimo + Configurações reagrupada, PARADO p/ validação).
 > Regra: não manter como pendente o que já foi concluído; marcar estado real (PLANEJADO / IMPLEMENTADO / VALIDADO / BLOQUEADO / NÃO VALIDADO).
 
 ## C. FASE 1 — Rearquitetura funcional (branch `refactor/sgam-rearquitetura-cliente`, base `a9cb2bc`, `D-RESET-CLIENTE-02`)
@@ -10,8 +10,14 @@
 - [x] BLOCO 2 VALIDADO: `tsc` 0; `lint` 0+24; `build` SUCCESS; auditoria fluxo atual registrada (reuso vs substituição)
 - [x] CHECKPOINT 2026-09-24 (`dc79e0c` + push origin, sem merge): suíte 223/223 em 6 execuções (65+36+27+41+54; 2 falhas transitórias de rede repetidas com 16/16); tsc 0; lint 0+24; build SUCCESS; Preview URL/status NÃO VALIDADOS
 - [x] BLOCO 3 IMPLEMENTADO: `resolverEntrada` 4 contextos (tokens existentes, sem tabela nova) + `/atendimento/a|l|u|c/[ref]` + chat determinístico (1 pergunta/vez, resumo, voltar) + `concluirAtendimento` (revalidação integral + ticket real + fotos + audit); fluxo antigo intacto
-- [x] BLOCO 3 VALIDADO: `tests/atendimento-contexto.test.ts` 6/6 + E2E 10/10 (chat→chamado+foto+404s, banco limpo) + `tsc` 0 + `lint` 0+24 + `build` 47 rotas; `schema_v27.sql` CRIADA NÃO aplicada (entry_token default + ativo_id nullable)
-- [ ] PARADO: aguardar validação do BLOCO 3 antes do BLOCO 4 (Ticket+portal). NÃO commitar sem ordem.
+- [x] CHECKPOINT BLOCO 3 2026-09-24 (`3eaedbe` + push origin, sem merge): suíte 229/229 (71+36+27+41+54); tsc 0; lint 0+24; build SUCCESS 47 rotas (43 + 4 atendimento); Preview URL NÃO VALIDADA
+- [x] AUDITORIA Ticket×Chamado: cria `chamados`/`solicitacoes_compra` direto (sem Ticket, sem triagem, sem O.S. auto) → NÃO VALIDADO p/ BLOCO 4; universal-sem-ativo exige v27 OU Ticket no BLOCO 4
+- [x] VERIFICAÇÃO 2026-09-25 (sem BLOCO 4): v27 OK no live (entry_token auto + chamado sem ativo + limpeza); Preview BLOCO 3 SUCCESS `compac-8nicbvtjr-...`; suíte 229/229 (71+36+27+41+54); tsc 0; lint 0+24; build SUCCESS 47 rotas
+- [ ] URGENTE (humano): confirmar no Vercel qual SHA serve `compac-xi` (ALERTA-PROD-01); rollback p/ `efa6df6` se preciso
+- [x] BLOCO 3.5 CONCLUÍDO 2026-09-25: `memory/AUDITORIA-UX-35.md` (A–O, código real, sem implementação)
+- [x] BLOCO 3.6 IMPLEMENTADO: DS mínimo (`tokens`, `Button`, `Card`, `Badge`, `Field`, `Loading`, `ErrorState`; `StatCard`/`PageHeader`/`EmptyState`/`StatusBadge` canônicos) + dashboard migrado p/ `Card` + Configurações reagrupada por responsabilidade (8 destinos, sem grade de cards)
+- [x] BLOCO 3.6 VALIDADO: `tsc` 0; `lint` 0+24; `build` SUCCESS; E2E 8/8 (dashboard, grupos, destinos, mobile sem overflow, banco limpo); 229 testes preservados (nenhum vitest novo — DS sem comportamento novo)
+- [ ] PARADO: aguardar avaliação do BLOCO 3.6. NÃO commitar sem ordem.
 
 ## B. FASE A — Fundação (branch `refactor/fundacao-arquitetura`)
 

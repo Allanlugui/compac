@@ -2,7 +2,7 @@
 
 > Fonte de contexto operacional. Precedência: código executado > config real > testes > docs > memória histórica.
 > Regras aplicadas: `F:/dev/memory/regras-agente.md` (Preservação, Auto-Gravação, Execução Contínua) + `F:/dev/memory/padroes-codigo.md`.
-> Última atualização: 2026-09-24 — FASE 1 BLOCO 3 concluído e PARADO p/ validação (4 entradas + chat + ticket real, 16 testes verdes, gates PASS, v27 NÃO aplicada, sem commit, sem BLOCO 4). Produção congelada.
+> Última atualização: 2026-09-25 — BLOCO 3.6 concluído (DS mínimo + Configurações reagrupada, E2E 8/8, gates PASS, sem commit). PARADO p/ avaliação. Produção congelada.
 
 ## 1. Estado atual
 

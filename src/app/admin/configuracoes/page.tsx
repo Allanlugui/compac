@@ -1,73 +1,56 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { ShieldX } from "lucide-react";
 import { requireOrg } from "@/lib/org";
 import { exigirPermissao } from "@/lib/permissoes";
 import PageHeader from "@/components/ui/PageHeader";
+import Button from "@/components/ui/Button";
 
 export const metadata: Metadata = { title: "Configurações · SGA-M" };
 
-interface Secao {
+interface Item {
   titulo: string;
   descricao: string;
   href: string;
-  rotulo: string;
-  futuro?: string;
+}
+
+interface Grupo {
+  titulo: string;
+  itens: Item[];
 }
 
 /**
- * FASE A — Centro de configurações (fundação).
- * Só links reais; evoluções (chatbot/IA, templates, notificações)
- * chegam nas fases seguintes, sem controles falsos.
+ * BLOCO 3.6 — Centro administrativo por responsabilidade (não grade de cards).
+ * Só destinos reais; E-mail templates, Atendimento/Agente e Gerais chegam
+ * nos blocos próprios, sem botões falsos.
  */
-const SECOES: Secao[] = [
+const GRUPOS: Grupo[] = [
   {
-    titulo: "Estrutura",
-    descricao: "Árvore unidade → sala e categorias.",
-    href: "/admin/estrutura",
-    rotulo: "Abrir estrutura",
+    titulo: "Organização",
+    itens: [
+      { titulo: "Estrutura", descricao: "Árvore unidade → sala e categorias", href: "/admin/estrutura" },
+      { titulo: "Cadastros", descricao: "Departamentos, centros de custo e almoxarifados", href: "/admin/cadastros" },
+    ],
   },
   {
-    titulo: "Cadastros",
-    descricao: "Departamentos, centros de custo e almoxarifados.",
-    href: "/admin/cadastros",
-    rotulo: "Abrir cadastros",
+    titulo: "Pessoas e acesso",
+    itens: [
+      { titulo: "Usuários", descricao: "Membros, perfis e acesso", href: "/admin/usuarios" },
+      { titulo: "Permissões", descricao: "Matriz por perfil + overrides por usuário", href: "/admin/usuarios" },
+    ],
   },
   {
-    titulo: "Usuários",
-    descricao: "Membros, perfis e acesso.",
-    href: "/admin/usuarios",
-    rotulo: "Abrir usuários",
+    titulo: "Operação",
+    itens: [
+      { titulo: "Links e QR Codes", descricao: "Contextos de QR e tokens de entrada", href: "/admin/qr-compras" },
+      { titulo: "Notificações", descricao: "Central do sino e regras de envio", href: "/admin/notificacoes" },
+    ],
   },
   {
-    titulo: "Permissões",
-    descricao: "Matriz por perfil + overrides granulares por usuário (na tela de usuários).",
-    href: "/admin/usuarios",
-    rotulo: "Gerenciar permissões",
-  },
-  {
-    titulo: "Auditoria",
-    descricao: "Trilha imutável de mutações.",
-    href: "/admin/auditoria",
-    rotulo: "Abrir auditoria",
-  },
-  {
-    titulo: "Monitoramento",
-    descricao: "Saúde operacional e preventivas.",
-    href: "/admin/monitoramento",
-    rotulo: "Abrir monitoramento",
-  },
-  {
-    titulo: "Notificações",
-    descricao: "Central do sino e regras de envio.",
-    href: "/admin/notificacoes",
-    rotulo: "Abrir notificações",
-  },
-  {
-    titulo: "Links e QR Codes",
-    descricao: "Contextos de QR e tokens de entrada.",
-    href: "/admin/qr-compras",
-    rotulo: "Abrir QR",
+    titulo: "Sistema",
+    itens: [
+      { titulo: "Auditoria", descricao: "Trilha imutável de mutações", href: "/admin/auditoria" },
+      { titulo: "Monitoramento", descricao: "Saúde operacional e preventivas", href: "/admin/monitoramento" },
+    ],
   },
 ];
 
@@ -91,22 +74,25 @@ export default async function ConfiguracoesPage() {
     <div className="space-y-6">
       <PageHeader
         titulo="Configurações"
-        descricao={`${ctx.orgNome} · estrutura, cadastros, usuários, permissões, auditoria e links.`}
+        descricao={`${ctx.orgNome} · o que precisa configurar, agrupado por responsabilidade.`}
       />
-      <div className="grid gap-3 sm:grid-cols-2">
-        {SECOES.map((s) => (
-          <section key={s.titulo} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-black text-zinc-900">{s.titulo}</h2>
-            <p className="mt-1 text-xs text-zinc-500">{s.descricao}</p>
-            {s.futuro && (
-              <p className="mt-1 text-[11px] font-bold text-amber-700">{s.futuro}</p>
-            )}
-            <Link
-              href={s.href}
-              className="mt-3 inline-flex min-h-[40px] items-center rounded-xl bg-zinc-900 px-4 text-xs font-bold text-white hover:bg-zinc-700"
-            >
-              {s.rotulo}
-            </Link>
+      <div className="space-y-4">
+        {GRUPOS.map((g) => (
+          <section key={g.titulo} aria-label={g.titulo}>
+            <h2 className="text-sm font-black uppercase tracking-wide text-zinc-700">{g.titulo}</h2>
+            <ul className="mt-2 divide-y divide-zinc-100 rounded-2xl border border-zinc-200 bg-white shadow-sm">
+              {g.itens.map((item) => (
+                <li key={item.titulo} className="flex items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-zinc-900">{item.titulo}</p>
+                    <p className="truncate text-xs text-zinc-500">{item.descricao}</p>
+                  </div>
+                  <Button variante="secondary" tamanho="sm" href={item.href}>
+                    Abrir →
+                  </Button>
+                </li>
+              ))}
+            </ul>
           </section>
         ))}
       </div>

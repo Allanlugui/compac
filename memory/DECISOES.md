@@ -26,6 +26,26 @@
 - **NÃO VALIDADO:** persistência de sessão (`intake_sessoes` — pesquisar duplicidade antes de criar tabela no BLOCO 3/4).
 - **Ref:** `src/lib/intake/`, `tests/intake-engine.test.ts` 7/7.
 
+## 00e. D-BLOCO3-AUDIT — Ticket×Chamado: DIVERGÊNCIA registrada (2026-09-24, checkpoint BLOCO 3)
+
+- **Fato (código):** ao concluir o chat nasce direto `chamados` (status `aberto`) ou `solicitacoes_compra` (+itens). NÃO existe entidade Ticket; NÃO há triagem; O.S. NÃO é criada; resolução sem Chamado NÃO suportada.
+- **Veredito:** NÃO VALIDADO — divergência entre Intake/Ticket/Chamado. BLOCO 3 entrega *entrada*, não o ciclo Ticket→Chamado. BLOCO 4 decide: (i) criar Ticket + triagem, ou (ii) redefinir chamado como ticket.
+- **v27:** necessária SOMENTE se universal criar chamado sem ativo; alternativa sem DDL: BLOCO 4 cria Ticket (sem ativo) e a triagem vincula ativo ao converter. Nenhum DDL executado.
+- **Persistência (decisão arquitetural):** sessão = client/request scoped; refresh perde progresso; sem `intake_sessoes` (pesquisado: nada equivalente existe); impacto aceito p/ intake curto; revisitar se houver rascunhos/portal/multi-device.
+- **Segurança provada em teste:** cross-tenant, ref inválida/inexistente/inativa; prefixo Storage no E2E; anon OK. Limite: identidade autenticada ainda não vinculada (`usuarioId` nunca preenchido) — pendente.
+- **Ref:** `src/app/atendimento/actions.ts`, `tests/atendimento-contexto.test.ts`, E2E 10/10.
+
+## 00f. D-UX35 — Auditoria global antes de redesenhar (2026-09-25, BLOCO 3.5)
+
+- **Decisão:** nenhum redesign isolado; mapa A–O em `memory/AUDITORIA-UX-35.md`; padrão futuro = tarefa→informação→ação (não menu→página→card); Ticket×Chamado e `compras` legado como travas explicitadas.
+- **Ref:** `memory/AUDITORIA-UX-35.md`.
+
+## 00g. D-DS36 — Fundação sem código morto (2026-09-25, BLOCO 3.6)
+
+- **Decisão:** 7 primitivos (`tokens`, `Button`, `Card`, `Badge`, `Field`, `Loading`, `ErrorState`); `StatCard`/`PageHeader`/`EmptyState`/`StatusBadge` mantidos como canônicos; dashboard migrado p/ `Card` (prova de reuso); Configurações reagrupada por responsabilidade (8 destinos reais, E-mail/Agente/Gerais deferidos sem botão falso).
+- **Sem vitest novo:** DS não cria comportamento; cobertura preservada 229/229.
+- **Ref:** `src/components/ui/`, E2E 8/8 com screenshots.
+
 ## 00d. D-BLOCO3-ENTRADA — Contexto reutilizado + sessão sem tabela (2026-09-24, FASE 1 BLOCO 3)
 
 - **Decisão:** 4 entradas via tokens existentes (`ativos.qr_code_hash`, `qr_contextos.token` ×2 fluxos, `organizations.entry_token`); paths `/atendimento/a|l|u|c/[ref]` (não `[ref]` único — evita ambiguidade semântica); sessão = estado client + revalidação integral server-side (sem `intake_sessoes`).

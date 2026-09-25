@@ -15,6 +15,11 @@ App Router (RSC + Server Actions) → Supabase (Postgres + Auth + Storage + RLS)
 ## Alvo V2 (não implementado)
 Ver `REARQUITETURA-V2.md`: Intake Engine determinística + LLM opcional, portal `/acompanhar/[token]`, thread do ticket, pipeline de e-mail, `Configurações do Sistema`, mobile por contexto, menu 4 grupos sem mensagens/organograma/busca-rota.
 
+## FASE 1 BLOCO 3 — entrada contextual (branch `refactor/sgam-rearquitetura-cliente`, `3eaedbe`)
+- Resolver server-side (tokens existentes) + `/atendimento/a|l|u|c/[ref]` + chat determinístico + conclusão com revalidação integral.
+- Cria DIRETO `chamados`/`solicitacoes_compra` (sem Ticket/triagem — divergência NÃO VALIDADA p/ BLOCO 4); universal-sem-ativo exige v27 (não aplicada) ou Ticket futuro.
+- Sessão client-scoped (sem tabela); fluxo antigo intacto.
+
 ## FASE A — fundação (branch `refactor/fundacao-arquitetura`, 2026-09-24)
 - `existeNaJanela` (dedup NULL-safe) + `revalidatePath` nas ações do sino.
 - `lib/email-pipeline.ts` (evento→template→provider→recibo) sobre SMTP existente; `email_logs` em DB fica p/ Fase B.
